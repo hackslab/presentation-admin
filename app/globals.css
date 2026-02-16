@@ -1,16 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --bg-top: #f9f2e8;
-  --bg-bottom: #deece8;
-  --surface: #fffef9;
+  --bg-top: #e6edf4;
+  --bg-bottom: #c7d5e4;
+  --surface: #f8fbfe;
   --surface-strong: #ffffff;
-  --text: #1d2a2d;
-  --muted: #5b6e71;
-  --line: #d5e0dd;
-  --accent: #0f766e;
-  --accent-soft: #d7f4ef;
-  --danger: #b42318;
+  --text: #112638;
+  --muted: #5b7184;
+  --line: #d2dde7;
+  --accent: #173d59;
 }
 
 @theme inline {
@@ -29,8 +27,61 @@ body {
   margin: 0;
   color: var(--text);
   background:
-    radial-gradient(1200px 520px at -5% -10%, #fff7df 0%, transparent 65%),
-    radial-gradient(900px 480px at 105% 110%, #cfece5 0%, transparent 60%),
+    radial-gradient(1200px 550px at -10% -15%, #f8fcff 0%, transparent 62%),
+    radial-gradient(1000px 520px at 105% 120%, #bdd4e9 0%, transparent 60%),
     linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
   font-family: var(--font-manrope), "Segoe UI", sans-serif;
+}
+
+.admin-bg {
+  background-image:
+    linear-gradient(to right, rgba(90, 118, 145, 0.16) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(90, 118, 145, 0.16) 1px, transparent 1px),
+    radial-gradient(1200px 420px at 12% -8%, rgba(255, 255, 255, 0.56), transparent);
+  background-size:
+    44px 44px,
+    44px 44px,
+    auto;
+  background-position:
+    center,
+    center,
+    center;
+  opacity: 0.7;
+}
+
+.login-bg {
+  background:
+    radial-gradient(900px 380px at 80% -10%, rgba(197, 223, 245, 0.6) 0%, transparent 65%),
+    radial-gradient(760px 360px at 0% 110%, rgba(255, 255, 255, 0.72) 0%, transparent 60%),
+    linear-gradient(160deg, #d9e5f1 0%, #c5d3e3 100%);
+}
+
+.panel-surface {
+  border: 1px solid rgba(210, 221, 231, 0.9);
+  background: linear-gradient(
+    160deg,
+    rgba(255, 255, 255, 0.95) 0%,
+    rgba(247, 251, 254, 0.95) 100%
+  );
+  box-shadow:
+    0 16px 40px rgba(26, 44, 63, 0.1),
+    inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(6px);
+  border-radius: 1rem;
+}
+
+.panel-enter {
+  animation: panel-enter 420ms ease-out both;
+}
+
+@keyframes panel-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }

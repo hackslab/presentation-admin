@@ -14,8 +14,8 @@ const ibmPlexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Telegram Bot Admin",
-  description: "Simple control panel for Telegram bot operations",
+  title: "Telegram Operations Console",
+  description: "Secure admin panel for Telegram bot operations",
 };
 
 export default function RootLayout({
