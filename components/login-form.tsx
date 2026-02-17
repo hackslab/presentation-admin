@@ -2,6 +2,8 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/base/buttons/button";
+import { Input } from "@/components/base/input/input";
 
 type LoginResponse = {
   message?: string;
@@ -14,6 +16,9 @@ export default function LoginForm() {
   const [password, setPassword] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  const panelClass =
+    "rounded-2xl border border-[#dbe5ec] bg-[linear-gradient(160deg,rgba(255,255,255,0.95)_0%,rgba(247,251,254,0.95)_100%)] shadow-[0_16px_40px_rgba(26,44,63,0.1),inset_0_1px_0_rgba(255,255,255,0.8)] backdrop-blur-[6px] animate-in fade-in slide-in-from-bottom-2 duration-500";
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -58,10 +63,16 @@ export default function LoginForm() {
 
   return (
     <div className="relative min-h-screen overflow-hidden px-4 py-6 sm:px-6 sm:py-8">
-      <div className="login-bg pointer-events-none absolute inset-0 -z-10" />
+      <div
+        className="pointer-events-none absolute inset-0 -z-10"
+        style={{
+          background:
+            "radial-gradient(900px 380px at 80% -10%, rgba(197, 223, 245, 0.6) 0%, transparent 65%), radial-gradient(760px 360px at 0% 110%, rgba(255, 255, 255, 0.72) 0%, transparent 60%), linear-gradient(160deg, #d9e5f1 0%, #c5d3e3 100%)",
+        }}
+      />
 
       <div className="mx-auto grid w-full max-w-6xl gap-6 lg:grid-cols-[minmax(0,1.1fr)_460px]">
-        <section className="panel-surface panel-enter hidden p-8 lg:block">
+        <section className={`${panelClass} hidden p-8 lg:block`}>
           <p className="text-xs font-mono uppercase tracking-[0.22em] text-[#4f6a81]">
             Telegram Operations
           </p>
@@ -90,7 +101,7 @@ export default function LoginForm() {
           </div>
         </section>
 
-        <section className="panel-surface panel-enter p-6 sm:p-8">
+        <section className={`${panelClass} p-6 sm:p-8`}>
           <p className="text-xs font-mono uppercase tracking-[0.22em] text-[#4f6a81]">
             Sign in
           </p>
@@ -100,28 +111,28 @@ export default function LoginForm() {
           </p>
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-            <label className="block space-y-1">
-              <span className="text-sm text-[#2b495f]">Username</span>
-              <input
-                value={username}
-                onChange={(event) => setUsername(event.target.value)}
-                autoComplete="username"
-                disabled={submitting}
-                className="h-11 w-full rounded-xl border border-[#d4dee6] bg-white px-3 text-sm text-[#173248] outline-none transition focus:border-[#4f84ac] disabled:cursor-not-allowed disabled:bg-[#f4f7fa]"
-              />
-            </label>
+            <Input
+              label="Username"
+              value={username}
+              onChange={setUsername}
+              autoComplete="username"
+              isDisabled={submitting}
+              wrapperClassName="!h-11 !rounded-xl !bg-white !ring-1 !ring-[#d4dee6] focus-within:!ring-[#4f84ac]"
+              inputClassName="!px-3 !py-0 !text-sm !text-[#173248]"
+              className="[&_[data-label]]:!text-sm [&_[data-label]]:!text-[#2b495f]"
+            />
 
-            <label className="block space-y-1">
-              <span className="text-sm text-[#2b495f]">Password</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                autoComplete="current-password"
-                disabled={submitting}
-                className="h-11 w-full rounded-xl border border-[#d4dee6] bg-white px-3 text-sm text-[#173248] outline-none transition focus:border-[#4f84ac] disabled:cursor-not-allowed disabled:bg-[#f4f7fa]"
-              />
-            </label>
+            <Input
+              label="Password"
+              type="password"
+              value={password}
+              onChange={setPassword}
+              autoComplete="current-password"
+              isDisabled={submitting}
+              wrapperClassName="!h-11 !rounded-xl !bg-white !ring-1 !ring-[#d4dee6] focus-within:!ring-[#4f84ac]"
+              inputClassName="!px-3 !py-0 !text-sm !text-[#173248]"
+              className="[&_[data-label]]:!text-sm [&_[data-label]]:!text-[#2b495f]"
+            />
 
             {error ? (
               <p className="rounded-xl border border-[#f4c5c5] bg-[#fff2f2] px-3 py-2 text-sm text-[#9a2c2c]">
@@ -129,13 +140,13 @@ export default function LoginForm() {
               </p>
             ) : null}
 
-            <button
+            <Button
               type="submit"
-              disabled={submitting}
-              className="inline-flex h-11 w-full items-center justify-center rounded-xl bg-[#173d59] px-4 text-sm font-semibold text-white transition hover:bg-[#204e72] disabled:cursor-not-allowed disabled:opacity-60"
+              isDisabled={submitting}
+              className="h-11 w-full rounded-xl !bg-[#173d59] !text-sm !font-semibold !text-white hover:!bg-[#204e72] disabled:!opacity-60"
             >
               {submitting ? "Signing in..." : "Sign in"}
-            </button>
+            </Button>
           </form>
         </section>
       </div>

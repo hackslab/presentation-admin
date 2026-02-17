@@ -1,7 +1,19 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  MouseEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/base/buttons/button";
+import { Input } from "@/components/base/input/input";
+import { NativeSelect } from "@/components/base/select/select-native";
+import { TextArea } from "@/components/base/textarea/textarea";
+import ThemeToggle from "@/components/theme-toggle";
 
 type Overview = {
   totalUsers: number;
@@ -311,6 +323,39 @@ export default function AdminDashboard() {
     setSearchQuery(searchInput.trim());
   };
 
+  const handleSidebarNavClick = (
+    event: MouseEvent<HTMLAnchorElement>,
+    sectionId: string,
+  ) => {
+    event.preventDefault();
+
+    const prefersReducedMotion = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+
+    if (sectionId === "overview") {
+      window.scrollTo({
+        top: 0,
+        left: 0,
+        behavior: prefersReducedMotion ? "auto" : "smooth",
+      });
+      window.history.replaceState(null, "", `#${sectionId}`);
+      return;
+    }
+
+    const section = document.getElementById(sectionId);
+    if (!section) {
+      return;
+    }
+
+    section.scrollIntoView({
+      behavior: prefersReducedMotion ? "auto" : "smooth",
+      block: "start",
+    });
+
+    window.history.replaceState(null, "", `#${sectionId}`);
+  };
+
   const handleBroadcastSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const message = broadcastMessage.trim();
@@ -602,13 +647,32 @@ export default function AdminDashboard() {
     },
   ];
 
+  const panelClass =
+    "rounded-2xl border border-[#d7e1e8] bg-[linear-gradient(160deg,rgba(255,255,255,0.95)_0%,rgba(247,251,254,0.95)_100%)] shadow-[0_16px_40px_rgba(26,44,63,0.1),inset_0_1px_0_rgba(255,255,255,0.8)] backdrop-blur-[6px] animate-in fade-in slide-in-from-bottom-2 duration-500";
+
+  const animatedPanelClass = "animate-in fade-in slide-in-from-bottom-2 duration-500";
+
   return (
-    <div className="relative min-h-screen overflow-hidden px-4 py-5 sm:px-6 lg:px-8 lg:py-8">
-      <div className="admin-bg pointer-events-none absolute inset-0 -z-10" />
+    <div
+      className="relative min-h-screen px-4 py-5 sm:px-6 lg:px-8 lg:py-8"
+      style={{
+        background:
+          "radial-gradient(1200px 550px at -10% -15%, rgba(248, 252, 255, 1) 0%, transparent 62%), radial-gradient(1000px 520px at 105% 120%, rgba(189, 212, 233, 1) 0%, transparent 60%), linear-gradient(180deg, #e6edf4, #c7d5e4)",
+      }}
+    >
+      <div
+        className="pointer-events-none absolute inset-0 -z-10 opacity-70"
+        style={{
+          backgroundImage:
+            "linear-gradient(to right, rgba(90, 118, 145, 0.16) 1px, transparent 1px), linear-gradient(to bottom, rgba(90, 118, 145, 0.16) 1px, transparent 1px), radial-gradient(1200px 420px at 12% -8%, rgba(255, 255, 255, 0.56), transparent)",
+          backgroundSize: "44px 44px, 44px 44px, auto",
+          backgroundPosition: "center, center, center",
+        }}
+      />
 
       <div className="mx-auto w-full max-w-[1680px]">
         <div className="grid gap-5 xl:grid-cols-[280px_minmax(0,1fr)]">
-          <aside className="panel-surface panel-enter h-fit p-4 sm:p-5 xl:sticky xl:top-6">
+          <aside className={`${panelClass} h-fit p-4 sm:p-5 xl:sticky xl:top-6 xl:self-start`}>
             <div className="space-y-5">
               <div>
                 <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-[#3f5e76]">
@@ -657,6 +721,7 @@ export default function AdminDashboard() {
                   <a
                     key={item.id}
                     href={`#${item.id}`}
+                    onClick={(event) => handleSidebarNavClick(event, item.id)}
                     className="block rounded-xl border border-[#d7e1e8] bg-[#f9fbfd] px-3 py-2 transition hover:border-[#9fb6c9] hover:bg-white"
                   >
                     <p className="font-medium text-[#173248]">{item.label}</p>
@@ -681,18 +746,21 @@ export default function AdminDashboard() {
                 </p>
               </div>
 
-              <button
+              <ThemeToggle className="w-full" />
+
+              <Button
                 type="button"
+                color="secondary"
                 onClick={handleLogout}
-                className="inline-flex h-10 w-full items-center justify-center rounded-xl border border-[#d8e0e7] bg-white px-4 text-sm font-semibold text-[#1b3448] transition hover:border-[#b8c8d6] hover:bg-[#f7f9fb]"
+                className="h-10 w-full rounded-xl !border !border-[#d8e0e7] !bg-white !text-sm !font-semibold !text-[#1b3448] hover:!border-[#b8c8d6] hover:!bg-[#f7f9fb]"
               >
                 Sign out
-              </button>
+              </Button>
             </div>
           </aside>
 
           <main className="space-y-5">
-            <section className="panel-surface panel-enter p-5 sm:p-6">
+            <section className={`${panelClass} p-5 sm:p-6`}>
               <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                 <div>
                   <p className="text-xs font-mono uppercase tracking-[0.2em] text-[#4f6a81]">
@@ -716,14 +784,14 @@ export default function AdminDashboard() {
                     {currentAdmin?.role ? ` (${currentAdmin.role})` : ""}
                   </div>
 
-                  <button
+                  <Button
                     type="button"
                     onClick={handleRefresh}
-                    disabled={refreshing || loading}
-                    className="inline-flex h-10 items-center justify-center rounded-xl bg-[#123a57] px-4 text-sm font-semibold text-white transition hover:bg-[#1a4c70] disabled:cursor-not-allowed disabled:opacity-60"
+                    isDisabled={refreshing || loading}
+                    className="h-10 rounded-xl !bg-[#123a57] !text-sm !font-semibold !text-white hover:!bg-[#1a4c70] disabled:!opacity-60"
                   >
                     {refreshing ? "Refreshing..." : "Refresh data"}
-                  </button>
+                  </Button>
                 </div>
               </div>
             </section>
@@ -738,7 +806,7 @@ export default function AdminDashboard() {
               {overviewCards.map((card, index) => (
                 <article
                   key={card.label}
-                  className={`panel-enter rounded-2xl bg-gradient-to-br p-4 shadow-[0_14px_28px_rgba(10,20,40,0.2)] ${card.accent}`}
+                  className={`${animatedPanelClass} rounded-2xl bg-gradient-to-br p-4 shadow-[0_14px_28px_rgba(10,20,40,0.2)] ${card.accent}`}
                   style={{ animationDelay: `${index * 70}ms` }}
                 >
                   <p className="text-sm text-white/80">{card.label}</p>
@@ -749,7 +817,7 @@ export default function AdminDashboard() {
             </section>
 
             <section className="grid gap-5 2xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
-              <section id="users" className="panel-surface panel-enter p-5">
+              <section id="users" className={`${panelClass} p-5`}>
                 <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
                   <div>
                     <h3 className="text-xl font-semibold text-[#102637]">Users</h3>
@@ -762,18 +830,20 @@ export default function AdminDashboard() {
                     onSubmit={handleSearchSubmit}
                     className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row"
                   >
-                    <input
+                    <Input
                       value={searchInput}
-                      onChange={(event) => setSearchInput(event.target.value)}
+                      onChange={setSearchInput}
                       placeholder="Search users"
-                      className="h-10 w-full rounded-xl border border-[#d4dee6] bg-white px-3 text-sm text-[#173248] outline-none transition focus:border-[#4f84ac] sm:w-60"
+                      className="sm:w-60"
+                      wrapperClassName="!h-10 !rounded-xl !bg-white !ring-1 !ring-[#d4dee6] focus-within:!ring-[#4f84ac]"
+                      inputClassName="!px-3 !py-0 !text-sm !text-[#173248]"
                     />
-                    <button
+                    <Button
                       type="submit"
-                      className="h-10 rounded-xl bg-[#173d59] px-4 text-sm font-semibold text-white transition hover:bg-[#204e72]"
+                      className="h-10 rounded-xl !bg-[#173d59] !text-sm !font-semibold !text-white hover:!bg-[#204e72]"
                     >
                       Apply
-                    </button>
+                    </Button>
                   </form>
                 </div>
 
@@ -831,27 +901,27 @@ export default function AdminDashboard() {
               </section>
 
               <div className="space-y-5">
-                <section id="broadcast" className="panel-surface panel-enter p-5">
+                <section id="broadcast" className={`${panelClass} p-5`}>
                   <h3 className="text-xl font-semibold text-[#102637]">Broadcast</h3>
                   <p className="mt-1 text-sm text-[#5b7184]">
                     Send an announcement to users who completed registration.
                   </p>
 
                   <form onSubmit={handleBroadcastSubmit} className="mt-4 space-y-3">
-                    <textarea
+                    <TextArea
                       value={broadcastMessage}
-                      onChange={(event) => setBroadcastMessage(event.target.value)}
+                      onChange={setBroadcastMessage}
                       placeholder="Write your message..."
                       rows={7}
-                      className="w-full rounded-xl border border-[#d4dee6] bg-white px-3 py-2 text-sm text-[#173248] outline-none transition focus:border-[#4f84ac]"
+                      textAreaClassName="!rounded-xl !bg-white !px-3 !py-2 !text-sm !text-[#173248] !ring-1 !ring-[#d4dee6] focus:!ring-[#4f84ac]"
                     />
-                    <button
+                    <Button
                       type="submit"
-                      disabled={broadcasting}
-                      className="inline-flex h-10 w-full items-center justify-center rounded-xl bg-[#0f6f5b] px-4 text-sm font-semibold text-white transition hover:bg-[#0f5e4d] disabled:cursor-not-allowed disabled:opacity-60"
+                      isDisabled={broadcasting}
+                      className="h-10 w-full rounded-xl !bg-[#0f6f5b] !text-sm !font-semibold !text-white hover:!bg-[#0f5e4d] disabled:!opacity-60"
                     >
                       {broadcasting ? "Sending..." : "Send broadcast"}
-                    </button>
+                    </Button>
                   </form>
 
                   <p
@@ -865,7 +935,7 @@ export default function AdminDashboard() {
                   </p>
                 </section>
 
-                <section className="panel-surface panel-enter p-5">
+                <section className={`${panelClass} p-5`}>
                   <div className="flex items-center justify-between">
                     <h3 className="text-lg font-semibold text-[#102637]">Watchlist</h3>
                     <span className="text-xs text-[#6b8094]">Last 5 issues</span>
@@ -906,7 +976,7 @@ export default function AdminDashboard() {
               </div>
             </section>
 
-            <section id="jobs" className="panel-surface panel-enter p-5">
+            <section id="jobs" className={`${panelClass} p-5`}>
               <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                 <div>
                   <h3 className="text-xl font-semibold text-[#102637]">Presentation Jobs</h3>
@@ -917,20 +987,21 @@ export default function AdminDashboard() {
 
                 <div className="flex flex-wrap gap-2">
                   {PRESENTATION_FILTERS.map((filterValue) => (
-                    <button
+                    <Button
                       key={filterValue}
                       type="button"
+                      color="secondary"
                       onClick={() => setPresentationFilter(filterValue)}
-                      className={`h-9 rounded-full px-4 text-sm font-semibold transition ${
+                      className={`h-9 rounded-full !px-4 !text-sm !font-semibold ${
                         presentationFilter === filterValue
-                          ? "bg-[#173d59] text-white"
-                          : "bg-[#edf3f7] text-[#375469] hover:bg-[#dfeaf2]"
+                          ? "!bg-[#173d59] !text-white"
+                          : "!bg-[#edf3f7] !text-[#375469] hover:!bg-[#dfeaf2]"
                       }`}
                     >
                       {filterValue === "all"
                         ? "All"
                         : filterValue.charAt(0).toUpperCase() + filterValue.slice(1)}
-                    </button>
+                    </Button>
                   ))}
                 </div>
               </div>
@@ -985,16 +1056,16 @@ export default function AdminDashboard() {
                           </td>
                           <td className="px-3 py-3">
                             {item.status === "pending" ? (
-                              <button
+                              <Button
                                 type="button"
                                 onClick={() => handleFailPending(item.id)}
-                                disabled={failingPresentationId === item.id}
-                                className="inline-flex h-9 items-center justify-center rounded-lg bg-[#a82a2a] px-3 text-xs font-semibold text-white transition hover:bg-[#902626] disabled:cursor-not-allowed disabled:opacity-60"
+                                isDisabled={failingPresentationId === item.id}
+                                className="h-9 rounded-lg !bg-[#a82a2a] !px-3 !text-xs !font-semibold !text-white hover:!bg-[#902626] disabled:!opacity-60"
                               >
                                 {failingPresentationId === item.id
                                   ? "Updating..."
                                   : "Mark failed"}
-                              </button>
+                              </Button>
                             ) : (
                               <span className="text-xs text-[#718799]">-</span>
                             )}
@@ -1007,7 +1078,7 @@ export default function AdminDashboard() {
               </div>
             </section>
 
-            <section id="admins" className="panel-surface panel-enter p-5">
+            <section id="admins" className={`${panelClass} p-5`}>
               <div className="flex flex-col gap-2">
                 <h3 className="text-xl font-semibold text-[#102637]">Admin Management</h3>
                 <p className="text-sm text-[#5b7184]">
@@ -1030,44 +1101,47 @@ export default function AdminDashboard() {
                       Create admin
                     </h4>
 
-                    <input
+                    <Input
                       value={newAdminForm.name}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setNewAdminForm((previous) => ({
                           ...previous,
-                          name: event.target.value,
+                          name: value,
                         }))
                       }
                       placeholder="Full name"
-                      className="h-10 w-full rounded-lg border border-[#d4dee6] bg-white px-3 text-sm text-[#173248] outline-none transition focus:border-[#4f84ac]"
+                      wrapperClassName="!h-10 !rounded-lg !bg-white !ring-1 !ring-[#d4dee6] focus-within:!ring-[#4f84ac]"
+                      inputClassName="!px-3 !py-0 !text-sm !text-[#173248]"
                     />
 
-                    <input
+                    <Input
                       value={newAdminForm.username}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setNewAdminForm((previous) => ({
                           ...previous,
-                          username: event.target.value,
+                          username: value,
                         }))
                       }
                       placeholder="Username"
-                      className="h-10 w-full rounded-lg border border-[#d4dee6] bg-white px-3 text-sm text-[#173248] outline-none transition focus:border-[#4f84ac]"
+                      wrapperClassName="!h-10 !rounded-lg !bg-white !ring-1 !ring-[#d4dee6] focus-within:!ring-[#4f84ac]"
+                      inputClassName="!px-3 !py-0 !text-sm !text-[#173248]"
                     />
 
-                    <input
+                    <Input
                       type="password"
                       value={newAdminForm.password}
-                      onChange={(event) =>
+                      onChange={(value) =>
                         setNewAdminForm((previous) => ({
                           ...previous,
-                          password: event.target.value,
+                          password: value,
                         }))
                       }
                       placeholder="Password"
-                      className="h-10 w-full rounded-lg border border-[#d4dee6] bg-white px-3 text-sm text-[#173248] outline-none transition focus:border-[#4f84ac]"
+                      wrapperClassName="!h-10 !rounded-lg !bg-white !ring-1 !ring-[#d4dee6] focus-within:!ring-[#4f84ac]"
+                      inputClassName="!px-3 !py-0 !text-sm !text-[#173248]"
                     />
 
-                    <select
+                    <NativeSelect
                       value={newAdminForm.role}
                       onChange={(event) =>
                         setNewAdminForm((previous) => ({
@@ -1075,19 +1149,20 @@ export default function AdminDashboard() {
                           role: event.target.value as AdminRole,
                         }))
                       }
-                      className="h-10 w-full rounded-lg border border-[#d4dee6] bg-white px-3 text-sm text-[#173248] outline-none transition focus:border-[#4f84ac]"
-                    >
-                      <option value="ADMIN">ADMIN</option>
-                      <option value="SUPERADMIN">SUPERADMIN</option>
-                    </select>
+                      options={[
+                        { label: "ADMIN", value: "ADMIN" },
+                        { label: "SUPERADMIN", value: "SUPERADMIN" },
+                      ]}
+                      selectClassName="!h-10 !w-full !rounded-lg !bg-white !px-3 !text-sm !text-[#173248] !ring-1 !ring-[#d4dee6] focus-visible:!ring-[#4f84ac]"
+                    />
 
-                    <button
+                    <Button
                       type="submit"
-                      disabled={savingAdmin}
-                      className="inline-flex h-10 w-full items-center justify-center rounded-lg bg-[#173d59] px-4 text-sm font-semibold text-white transition hover:bg-[#204e72] disabled:cursor-not-allowed disabled:opacity-60"
+                      isDisabled={savingAdmin}
+                      className="h-10 w-full rounded-lg !bg-[#173d59] !text-sm !font-semibold !text-white hover:!bg-[#204e72] disabled:!opacity-60"
                     >
                       {savingAdmin ? "Saving..." : "Create admin"}
-                    </button>
+                    </Button>
 
                     {adminActionMessage ? (
                       <p className="text-sm text-[#5f778a]">{adminActionMessage}</p>

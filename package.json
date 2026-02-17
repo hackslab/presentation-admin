@@ -9,9 +9,16 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@react-stately/utils": "^3.11.0",
+    "@untitledui/icons": "^0.0.21",
     "next": "16.1.6",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-aria": "^3.46.0",
+    "react-aria-components": "^1.15.1",
+    "react-dom": "19.2.3",
+    "tailwind-merge": "^3.4.1",
+    "tailwindcss-animate": "^1.0.7",
+    "tailwindcss-react-aria-components": "^2.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
