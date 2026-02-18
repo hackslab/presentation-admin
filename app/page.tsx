@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  FormEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Eye,
   Loader2,
@@ -100,6 +107,29 @@ interface RuntimeSettingsResponse {
   freePresentationGenerationLimit: number;
 }
 
+interface ConnectionPageInfo {
+  hasNextPage: boolean;
+  hasPreviousPage: boolean;
+  startCursor: string | null;
+  endCursor: string | null;
+}
+
+interface ConnectionEdge<TNode> {
+  cursor: string;
+  node: TNode;
+}
+
+interface ConnectionResponse<TNode> {
+  totalCount: number;
+  edges: ConnectionEdge<TNode>[];
+  nodes: TNode[];
+  pageInfo: ConnectionPageInfo;
+}
+
+interface UsersConnectionResponse extends ConnectionResponse<UserRow> {
+  search: string | null;
+}
+
 interface ApiError {
   message?: string | string[];
   error?: string;
@@ -114,6 +144,12 @@ const MAIN_THEME_PROMPT_LIMIT_MIN = 10;
 const MAIN_THEME_PROMPT_LIMIT_MAX = 4096;
 const FREE_PRESENTATION_GENERATION_LIMIT_MIN = 1;
 const FREE_PRESENTATION_GENERATION_LIMIT_MAX = 100;
+const EMPTY_CONNECTION_PAGE_INFO: ConnectionPageInfo = {
+  hasNextPage: false,
+  hasPreviousPage: false,
+  startCursor: null,
+  endCursor: null,
+};
 
 interface JobCompositionStats {
   totalJobs: number;
