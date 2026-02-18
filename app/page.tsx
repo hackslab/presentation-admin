@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
+import { AnimatedCircularProgressBar } from "@/components/ui/animated-circular-progress-bar";
 import { BentoCard, BentoGrid } from "@/components/ui/bento-grid";
 import { ShineBorder } from "@/components/ui/shine-border";
 import { cn } from "@/lib/utils";
@@ -36,6 +37,14 @@ interface OverviewResponse {
   pendingJobs: number;
   completedJobs: number;
   failedJobs: number;
+  statistics: {
+    totalJobs: number;
+    registrationRate: number;
+    completionRate: number;
+    pendingRate: number;
+    failureRate: number;
+    avgGenerationsPerActiveUser24h: number;
+  };
 }
 
 interface UserRow {
@@ -156,8 +165,27 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat("en-US").format(value);
 }
 
+function formatPercent(value: number): string {
+  return `${new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 1,
+  }).format(value)}%`;
+}
+
+function formatDecimal(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+function clampNumber(value: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, value));
+}
+
 export default function Home() {
   const pathname = usePathname();
+  const router = useRouter();
   const [theme, setTheme] = useState<ThemeMode>("light");
   const [isHydrated, setIsHydrated] = useState(false);
 
@@ -173,10 +201,6 @@ export default function Home() {
   const [globalError, setGlobalError] = useState<string | null>(null);
   const [globalInfo, setGlobalInfo] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-
-  const [loginUsername, setLoginUsername] = useState("admin");
-  const [loginPassword, setLoginPassword] = useState("admin123");
-  const [isSubmittingLogin, setIsSubmittingLogin] = useState(false);
 
   const [userSearch, setUserSearch] = useState("");
   const [userLimit, setUserLimit] = useState(20);
@@ -354,39 +378,14 @@ export default function Home() {
     void refreshDashboard();
   }, [isHydrated, refreshDashboard, session?.accessToken]);
 
-  const overviewCards = useMemo(
-    () => [
-      {
-        label: "Total users",
-        value: overview?.totalUsers ?? 0,
-      },
-      {
-        label: "Registered",
-        value: overview?.registeredUsers ?? 0,
-      },
-      {
-        label: "Active (24h)",
-        value: overview?.activeUsers24h ?? 0,
-      },
-      {
-        label: "Generated (24h)",
-        value: overview?.generated24h ?? 0,
-      },
-      {
-        label: "Pending jobs",
-        value: overview?.pendingJobs ?? 0,
-      },
-      {
-        label: "Completed jobs",
-        value: overview?.completedJobs ?? 0,
-      },
-      {
-        label: "Failed jobs",
-        value: overview?.failedJobs ?? 0,
-      },
-    ],
-    [overview]
-  );
+  useEffect(() => {
+    if (!isHydrated || session?.accessToken) {
+      return;
+    }
+
+    const nextPath = pathname !== "/" ? `?next=${encodeURIComponent(pathname)}` : "";
+    router.replace(`/login${nextPath}`);
+  }, [isHydrated, pathname, router, session?.accessToken]);
 
   const pendingPresentations = presentations.filter((item) => item.status === "pending");
 
@@ -490,35 +489,6 @@ export default function Home() {
     return "border-emerald-300 bg-emerald-100 text-emerald-700";
   };
 
-  const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setGlobalError(null);
-    setGlobalInfo(null);
-    setIsSubmittingLogin(true);
-
-    try {
-      const payload = await apiRequest<AuthResponse>(
-        "/admin/auth/login",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            username: loginUsername,
-            password: loginPassword,
-          }),
-        },
-        false
-      );
-
-      setSession(payload);
-      setProfile(payload.admin);
-      setGlobalInfo("Signed in successfully.");
-    } catch (error) {
-      setGlobalError(toErrorMessage(error));
-    } finally {
-      setIsSubmittingLogin(false);
-    }
-  };
-
   const handleRefreshToken = async () => {
     if (!session?.refreshToken) {
       return;
@@ -570,6 +540,7 @@ export default function Home() {
     setAdmins([]);
     setAdminsError(null);
     setGlobalInfo("Session cleared.");
+    router.replace("/login");
   };
 
   const handleFailPresentation = async (id: number) => {
@@ -786,45 +757,8 @@ export default function Home() {
 
               {!session ? (
                 <section className="surface-glass rounded-3xl p-5 md:p-6">
-                  <h3 className="text-xl font-semibold text-main">Admin authentication</h3>
-                  <p className="mt-2 text-sm text-muted">Uses `POST /admin/auth/login` and stores both access and refresh tokens in local storage.</p>
-
-                  <form className="mt-5 grid gap-3 md:grid-cols-3" onSubmit={handleLogin}>
-                    <label className="grid gap-2 text-sm text-main">
-                      Username
-                      <input
-                        value={loginUsername}
-                        onChange={(event) => {
-                          setLoginUsername(event.target.value);
-                        }}
-                        className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
-                        placeholder="admin"
-                        required
-                      />
-                    </label>
-
-                    <label className="grid gap-2 text-sm text-main">
-                      Password
-                      <input
-                        type="password"
-                        value={loginPassword}
-                        onChange={(event) => {
-                          setLoginPassword(event.target.value);
-                        }}
-                        className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
-                        placeholder="admin123"
-                        required
-                      />
-                    </label>
-
-                    <button
-                      type="submit"
-                      disabled={isSubmittingLogin}
-                      className="mt-auto rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-sm font-semibold text-main transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {isSubmittingLogin ? "Signing in..." : "Sign in"}
-                    </button>
-                  </form>
+                  <h3 className="text-xl font-semibold text-main">Redirecting to login</h3>
+                  <p className="mt-2 text-sm text-muted">Authentication now lives on a dedicated `/login` page.</p>
                 </section>
               ) : (
                 <>
@@ -832,34 +766,9 @@ export default function Home() {
                     {activeSection === "overview" ? (
                       <BentoGrid>
                         <BentoCard
-                          title="Live Metrics"
-                          description="Sourced from GET /admin/overview"
-                          className="surface-glass md:col-span-4"
-                        >
-                          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-                            {overviewCards.map((item) => (
-                              <div
-                                key={item.label}
-                                className="relative overflow-hidden rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3"
-                              >
-                                <ShineBorder
-                                  borderWidth={1}
-                                  duration={12}
-                                  shineColor={["rgba(34,211,238,0.4)", "rgba(14,165,233,0.1)"]}
-                                />
-                                <p className="text-xs text-muted">{item.label}</p>
-                                <p className="mt-2 text-xl font-semibold text-main">
-                                  {formatNumber(item.value)}
-                                </p>
-                              </div>
-                            ))}
-                          </div>
-                        </BentoCard>
-
-                        <BentoCard
                           title="Pending Queue"
                           description="Moderation candidate list"
-                          className="surface-glass md:col-span-2"
+                          className="surface-glass order-2 md:col-span-2"
                         >
                           <div className="space-y-2">
                             {pendingPresentations.length === 0 ? (
@@ -892,20 +801,108 @@ export default function Home() {
                         </BentoCard>
 
                         <BentoCard
-                          title="Quick Access"
-                          description="Jump between admin routes"
-                          className="surface-glass md:col-span-3"
+                          title="Statistics"
+                          description="Prepared backend metrics from GET /admin/overview"
+                          className="surface-glass order-1 row-span-2 md:col-span-4"
+                          as="div"
                         >
-                          <div className="grid gap-2 sm:grid-cols-2">
-                            {navItems.filter((item) => item.key !== "overview").map((item) => (
-                              <Link
-                                key={item.href}
-                                href={item.href}
-                                className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-left text-sm font-medium text-main transition hover:border-[var(--accent)]"
-                              >
-                                {item.label}
-                              </Link>
-                            ))}
+                          <div className="space-y-3">
+                            <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs text-muted">Job composition</p>
+                                <p className="text-sm font-semibold text-main">
+                                  {formatNumber(overview?.statistics.totalJobs ?? 0)} total
+                                </p>
+                              </div>
+
+                              <div className="mt-3 flex h-3 overflow-hidden rounded-full border border-[var(--surface-border)] bg-[var(--surface-3)]">
+                                <div
+                                  className="h-full bg-emerald-400/90"
+                                  style={{
+                                    width: `${clampNumber(overview?.statistics.completionRate ?? 0, 0, 100)}%`,
+                                  }}
+                                />
+                                <div
+                                  className="h-full bg-amber-400/90"
+                                  style={{
+                                    width: `${clampNumber(overview?.statistics.pendingRate ?? 0, 0, 100)}%`,
+                                  }}
+                                />
+                                <div
+                                  className="h-full bg-rose-400/90"
+                                  style={{
+                                    width: `${clampNumber(overview?.statistics.failureRate ?? 0, 0, 100)}%`,
+                                  }}
+                                />
+                              </div>
+
+                              <div className="mt-2 grid grid-cols-3 gap-2 text-[0.7rem] text-muted">
+                                <p>Completed: {formatPercent(overview?.statistics.completionRate ?? 0)}</p>
+                                <p>Pending: {formatPercent(overview?.statistics.pendingRate ?? 0)}</p>
+                                <p>Failed: {formatPercent(overview?.statistics.failureRate ?? 0)}</p>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-2 text-center">
+                                <AnimatedCircularProgressBar
+                                  className="mx-auto size-20 text-sm text-main"
+                                  value={clampNumber(overview?.statistics.registrationRate ?? 0, 0, 100)}
+                                  gaugePrimaryColor="rgb(14 165 233)"
+                                  gaugeSecondaryColor="rgba(148,163,184,0.28)"
+                                />
+                                <p className="mt-1 text-[0.7rem] text-muted">Registration</p>
+                              </div>
+
+                              <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-2 text-center">
+                                <AnimatedCircularProgressBar
+                                  className="mx-auto size-20 text-sm text-main"
+                                  value={clampNumber(overview?.statistics.completionRate ?? 0, 0, 100)}
+                                  gaugePrimaryColor="rgb(16 185 129)"
+                                  gaugeSecondaryColor="rgba(148,163,184,0.28)"
+                                />
+                                <p className="mt-1 text-[0.7rem] text-muted">Completion</p>
+                              </div>
+
+                              <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-2 text-center">
+                                <AnimatedCircularProgressBar
+                                  className="mx-auto size-20 text-sm text-main"
+                                  value={clampNumber(overview?.statistics.pendingRate ?? 0, 0, 100)}
+                                  gaugePrimaryColor="rgb(245 158 11)"
+                                  gaugeSecondaryColor="rgba(148,163,184,0.28)"
+                                />
+                                <p className="mt-1 text-[0.7rem] text-muted">Pending</p>
+                              </div>
+
+                              <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-2 text-center">
+                                <AnimatedCircularProgressBar
+                                  className="mx-auto size-20 text-sm text-main"
+                                  value={clampNumber(overview?.statistics.failureRate ?? 0, 0, 100)}
+                                  gaugePrimaryColor="rgb(244 63 94)"
+                                  gaugeSecondaryColor="rgba(148,163,184,0.28)"
+                                />
+                                <p className="mt-1 text-[0.7rem] text-muted">Failure</p>
+                              </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs text-muted">Avg generations per active user (24h)</p>
+                                <p className="text-sm font-semibold text-main">
+                                  {formatDecimal(overview?.statistics.avgGenerationsPerActiveUser24h ?? 0)}
+                                </p>
+                              </div>
+
+                              <div className="mt-2 h-2 overflow-hidden rounded-full border border-[var(--surface-border)] bg-[var(--surface-3)]">
+                                <div
+                                  className="h-full bg-sky-400/90 transition-all duration-700"
+                                  style={{
+                                    width: `${clampNumber((overview?.statistics.avgGenerationsPerActiveUser24h ?? 0) * 20, 0, 100)}%`,
+                                  }}
+                                />
+                              </div>
+                              <p className="mt-1 text-[0.7rem] text-muted">Scale: 0 to 5+ generations</p>
+                            </div>
                           </div>
                         </BentoCard>
                       </BentoGrid>

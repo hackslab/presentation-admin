@@ -457,7 +457,15 @@ Example response (`200 OK`):
   "generated24h": 41,
   "pendingJobs": 3,
   "completedJobs": 650,
-  "failedJobs": 18
+  "failedJobs": 18,
+  "statistics": {
+    "totalJobs": 671,
+    "registrationRate": 68,
+    "completionRate": 96.9,
+    "pendingRate": 0.4,
+    "failureRate": 2.7,
+    "avgGenerationsPerActiveUser24h": 1.21
+  }
 }
 ```
 
