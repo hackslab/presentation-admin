@@ -362,11 +362,27 @@ export default function Home() {
   const [isAdminsLoading, setIsAdminsLoading] = useState(true);
 
   const [userSearch, setUserSearch] = useState("");
+  const [debouncedUserSearch, setDebouncedUserSearch] = useState("");
   const [userLimit, setUserLimit] = useState(20);
+  const [usersTotalCount, setUsersTotalCount] = useState(0);
+  const [usersPage, setUsersPage] = useState(1);
+  const [usersAfterHistory, setUsersAfterHistory] = useState<Array<string | null>>([
+    null,
+  ]);
+  const [usersPageInfo, setUsersPageInfo] = useState<ConnectionPageInfo>(
+    EMPTY_CONNECTION_PAGE_INFO,
+  );
 
   const [presentationLimit, setPresentationLimit] = useState(15);
   const [presentationStatus, setPresentationStatus] =
     useState<PresentationStatusFilter>("all");
+  const [presentationsTotalCount, setPresentationsTotalCount] = useState(0);
+  const [presentationsPage, setPresentationsPage] = useState(1);
+  const [presentationsAfterHistory, setPresentationsAfterHistory] = useState<
+    Array<string | null>
+  >([null]);
+  const [presentationsPageInfo, setPresentationsPageInfo] =
+    useState<ConnectionPageInfo>(EMPTY_CONNECTION_PAGE_INFO);
 
   const [broadcastMessage, setBroadcastMessage] = useState("");
   const [broadcastResult, setBroadcastResult] =
@@ -387,6 +403,9 @@ export default function Home() {
   const [adminUsername, setAdminUsername] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [adminRole, setAdminRole] = useState<AdminRole>("ADMIN");
+
+  const usersRequestVersionRef = useRef(0);
+  const presentationsRequestVersionRef = useRef(0);
 
   const apiRequest = useCallback(
     async <T,>(
