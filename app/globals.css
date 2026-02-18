@@ -1,26 +1,74 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  margin: 0;
+  font-family: var(--font-space-grotesk), "Segoe UI", sans-serif;
+  background: #e6edf8;
+  color: #0f172a;
+}
+
+code,
+pre {
+  font-family: var(--font-space-mono), "Consolas", monospace;
+}
+
+.dashboard-shell {
+  --app-bg: #e7eef9;
+  --surface-1: rgba(255, 255, 255, 0.82);
+  --surface-2: rgba(241, 246, 255, 0.9);
+  --surface-3: rgba(255, 255, 255, 0.52);
+  --surface-border: rgba(145, 158, 186, 0.35);
+  --text-main: #10223d;
+  --text-muted: #4a6287;
+  --accent: #0ea5e9;
+  --accent-soft: rgba(14, 165, 233, 0.2);
+  --glow-a: rgba(14, 165, 233, 0.34);
+  --glow-b: rgba(249, 115, 22, 0.24);
+}
+
+.dashboard-shell[data-theme="dark"] {
+  --app-bg: #060b13;
+  --surface-1: rgba(16, 25, 39, 0.84);
+  --surface-2: rgba(12, 20, 33, 0.92);
+  --surface-3: rgba(24, 37, 56, 0.6);
+  --surface-border: rgba(88, 110, 143, 0.42);
+  --text-main: #dceafe;
+  --text-muted: #97accd;
+  --accent: #22d3ee;
+  --accent-soft: rgba(34, 211, 238, 0.2);
+  --glow-a: rgba(34, 211, 238, 0.24);
+  --glow-b: rgba(244, 114, 182, 0.2);
+}
+
+.surface-glass {
+  background: var(--surface-1);
+  border: 1px solid var(--surface-border);
+  box-shadow: 0 30px 90px -60px rgba(10, 20, 38, 0.8);
+  backdrop-filter: blur(20px);
+}
+
+.surface-muted {
+  background: var(--surface-2);
+  border: 1px solid var(--surface-border);
+}
+
+.terminal-grid {
+  background-image: linear-gradient(to right, rgba(72, 102, 148, 0.1) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(72, 102, 148, 0.1) 1px, transparent 1px);
+  background-size: 18px 18px;
+}
+
+.text-main {
+  color: var(--text-main);
+}
+
+.text-muted {
+  color: var(--text-muted);
+}
+
+.dashboard-shell *,
+.dashboard-shell *::before,
+.dashboard-shell *::after {
+  animation: none !important;
+  transition: none !important;
 }
