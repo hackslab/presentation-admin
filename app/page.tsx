@@ -745,6 +745,22 @@ export default function Home() {
     }
   }, [apiRequest]);
 
+  const fetchBroadcastHistory = useCallback(async () => {
+    setIsBroadcastHistoryLoading(true);
+
+    try {
+      const data = await apiRequest<BroadcastHistoryItem[]>(
+        "/admin/broadcasts?first=50",
+      );
+      setBroadcastHistory(data);
+    } catch (error) {
+      setBroadcastHistory([]);
+      toast.error(toErrorMessage(error));
+    } finally {
+      setIsBroadcastHistoryLoading(false);
+    }
+  }, [apiRequest]);
+
   const refreshDashboard = useCallback(async () => {
     if (!session?.accessToken) {
       return;
@@ -764,6 +780,7 @@ export default function Home() {
       ...(pathname.startsWith("/settings") ? [fetchRuntimeSettings()] : []),
       ...(pathname.startsWith("/users") ? [fetchUsersCurrentPage()] : []),
       ...(pathname.startsWith("/admins") ? [fetchAdmins()] : []),
+      ...(pathname.startsWith("/broadcast") ? [fetchBroadcastHistory()] : []),
     ]);
 
     const rejected = results.find(
@@ -781,6 +798,7 @@ export default function Home() {
     fetchMe,
     fetchOverview,
     fetchOverviewUsers,
+    fetchBroadcastHistory,
     fetchPresentationsCurrentPage,
     fetchPresentationsFirstPage,
     fetchRuntimeSettings,
@@ -851,6 +869,14 @@ export default function Home() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [selectedPresentation]);
+
+  useEffect(() => {
+    return () => {
+      if (broadcastImagePreviewUrl) {
+        URL.revokeObjectURL(broadcastImagePreviewUrl);
+      }
+    };
+  }, [broadcastImagePreviewUrl]);
 
   useEffect(() => {
     if (!isHydrated) {
