@@ -508,13 +508,13 @@ export default function Home() {
     [apiRequest, debouncedUserSearch, userLimit],
   );
 
-  const fetchUsersFirstPage = useCallback(async () => {
+  const fetchUsersFirstPage = useCallback(async (search = debouncedUserSearch) => {
     setUsersPage(1);
     setUsersAfterHistory([null]);
     setUsersPageInfo(EMPTY_CONNECTION_PAGE_INFO);
 
-    await fetchUsersPage({ page: 1, after: null });
-  }, [fetchUsersPage]);
+    await fetchUsersPage({ page: 1, after: null, search });
+  }, [debouncedUserSearch, fetchUsersPage]);
 
   const fetchUsersCurrentPage = useCallback(async () => {
     const after = usersAfterHistory[usersPage - 1] ?? null;
@@ -1913,7 +1913,9 @@ export default function Home() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  void fetchUsersCurrentPage();
+                                  const search = userSearch.trim();
+                                  setDebouncedUserSearch(search);
+                                  void fetchUsersFirstPage(search);
                                 }}
                                 disabled={isUsersLoading}
                                 aria-label="Reload users"
