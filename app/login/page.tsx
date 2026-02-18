@@ -2,9 +2,11 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { Loader2, LogIn } from "lucide-react";
+import { toast } from "sonner";
 
+import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { ShineBorder } from "@/components/ui/shine-border";
-import { cn } from "@/lib/utils";
 
 type ThemeMode = "light" | "dark";
 
@@ -97,7 +99,6 @@ export default function LoginPage() {
   const [username, setUsername] = useState("admin");
   const [password, setPassword] = useState("admin123");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const nextPath = useMemo(() => resolveNextPath(searchParams.get("next")), [searchParams]);
 
@@ -107,6 +108,9 @@ export default function LoginPage() {
 
     if (savedTheme === "light" || savedTheme === "dark") {
       setTheme(savedTheme);
+      document.documentElement.classList.toggle("dark", savedTheme === "dark");
+    } else {
+      document.documentElement.classList.remove("dark");
     }
 
     if (savedSession) {
@@ -131,11 +135,11 @@ export default function LoginPage() {
     }
 
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    document.documentElement.classList.toggle("dark", theme === "dark");
   }, [isHydrated, theme]);
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setError(null);
     setIsSubmitting(true);
 
     try {
@@ -161,7 +165,7 @@ export default function LoginPage() {
       window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(payload));
       router.replace(nextPath);
     } catch (requestError) {
-      setError(toErrorMessage(requestError));
+      toast.error(toErrorMessage(requestError));
       setIsSubmitting(false);
     }
   };
@@ -190,23 +194,12 @@ export default function LoginPage() {
               <h1 className="mt-2 text-2xl font-semibold tracking-tight text-main">Axiom Admin Login</h1>
             </div>
 
-            <button
-              type="button"
-              className="flex items-center gap-2 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-xs font-medium text-main transition hover:border-[var(--accent)]"
-              onClick={() => {
-                setTheme((current) => (current === "light" ? "dark" : "light"));
-              }}
-            >
-              Theme
-              <span className="relative inline-flex h-5 w-9 items-center rounded-full border border-[var(--surface-border)] bg-[var(--surface-3)] px-0.5">
-                <span
-                  className={cn(
-                    "absolute h-3.5 w-3.5 rounded-full bg-[var(--accent)] transition-transform",
-                    theme === "dark" ? "translate-x-4" : "translate-x-0"
-                  )}
-                />
-              </span>
-            </button>
+            <AnimatedThemeToggler
+              storageKey={THEME_STORAGE_KEY}
+              onThemeChange={setTheme}
+              aria-label="Toggle theme"
+              className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] text-main transition hover:border-[var(--accent)]"
+            />
           </div>
 
           <p className="mt-3 text-sm text-muted">Use your admin credentials to access the dashboard.</p>
@@ -241,16 +234,19 @@ export default function LoginPage() {
               />
             </label>
 
-            {error ? (
-              <div className="rounded-xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm text-rose-700">{error}</div>
-            ) : null}
-
             <button
               type="submit"
               disabled={isSubmitting || !isHydrated}
-              className="w-full rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-sm font-semibold text-main transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+              aria-label={isSubmitting ? "Signing in" : "Sign in"}
+              title={isSubmitting ? "Signing in" : "Sign in"}
+              className="inline-flex w-full items-center justify-center rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-main transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {isSubmitting ? "Signing in..." : "Sign in"}
+              {isSubmitting ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <LogIn className="size-4" aria-hidden="true" />
+              )}
+              <span className="sr-only">{isSubmitting ? "Signing in" : "Sign in"}</span>
             </button>
           </form>
 

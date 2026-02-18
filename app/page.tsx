@@ -3,8 +3,20 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import {
+  Eye,
+  Loader2,
+  LogOut,
+  RefreshCw,
+  Save,
+  Send,
+  UserPlus,
+  XCircle,
+} from "lucide-react";
+import { toast } from "sonner";
 
 import { BentoCard, BentoGrid } from "@/components/ui/bento-grid";
+import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { NumberTicker } from "@/components/ui/number-ticker";
 import { ShineBorder } from "@/components/ui/shine-border";
 import { cn } from "@/lib/utils";
@@ -85,6 +97,7 @@ interface BroadcastResult {
 
 interface RuntimeSettingsResponse {
   mainThemePromptCharacterLimit: number;
+  freePresentationGenerationLimit: number;
 }
 
 interface ApiError {
@@ -93,14 +106,14 @@ interface ApiError {
   statusCode?: number;
 }
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
 const API_PROXY_PREFIX = "/backend";
 const THEME_STORAGE_KEY = "axiom-admin-theme";
 const SESSION_STORAGE_KEY = "axiom-admin-session";
 const STATS_CACHE_STORAGE_KEY = "axiom-admin-stats-cache";
 const MAIN_THEME_PROMPT_LIMIT_MIN = 10;
 const MAIN_THEME_PROMPT_LIMIT_MAX = 4096;
+const FREE_PRESENTATION_GENERATION_LIMIT_MIN = 1;
+const FREE_PRESENTATION_GENERATION_LIMIT_MAX = 100;
 
 interface JobCompositionStats {
   totalJobs: number;
@@ -199,6 +212,7 @@ function parseCachedStatistics(
 
 type SectionKey =
   | "overview"
+  | "settings"
   | "users"
   | "presentations"
   | "broadcast"
@@ -289,11 +303,10 @@ export default function Home() {
   const [cachedStatistics, setCachedStatistics] =
     useState<CachedStatistics | null>(null);
   const [presentations, setPresentations] = useState<PresentationRow[]>([]);
+  const [selectedPresentation, setSelectedPresentation] =
+    useState<PresentationRow | null>(null);
   const [admins, setAdmins] = useState<AdminProfile[]>([]);
 
-  const [adminsError, setAdminsError] = useState<string | null>(null);
-  const [globalError, setGlobalError] = useState<string | null>(null);
-  const [globalInfo, setGlobalInfo] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   const [userSearch, setUserSearch] = useState("");
@@ -308,8 +321,14 @@ export default function Home() {
     useState<BroadcastResult | null>(null);
   const [runtimeSettings, setRuntimeSettings] =
     useState<RuntimeSettingsResponse | null>(null);
-  const [mainThemePromptCharacterLimitInput, setMainThemePromptCharacterLimitInput] =
-    useState("");
+  const [
+    mainThemePromptCharacterLimitInput,
+    setMainThemePromptCharacterLimitInput,
+  ] = useState("");
+  const [
+    freePresentationGenerationLimitInput,
+    setFreePresentationGenerationLimitInput,
+  ] = useState("");
   const [isSavingRuntimeSettings, setIsSavingRuntimeSettings] = useState(false);
 
   const [adminName, setAdminName] = useState("");
@@ -418,16 +437,18 @@ export default function Home() {
     setMainThemePromptCharacterLimitInput(
       `${data.mainThemePromptCharacterLimit}`,
     );
+    setFreePresentationGenerationLimitInput(
+      `${data.freePresentationGenerationLimit}`,
+    );
   }, [apiRequest]);
 
   const fetchAdmins = useCallback(async () => {
     try {
       const data = await apiRequest<AdminProfile[]>("/admin/admins");
       setAdmins(data);
-      setAdminsError(null);
     } catch (error) {
       setAdmins([]);
-      setAdminsError(toErrorMessage(error));
+      toast.error(toErrorMessage(error));
     }
   }, [apiRequest]);
 
@@ -437,14 +458,13 @@ export default function Home() {
     }
 
     setIsLoading(true);
-    setGlobalError(null);
 
     const results = await Promise.allSettled([
       fetchMe(),
       fetchOverview(),
       fetchOverviewUsers(),
       fetchPresentations(),
-      fetchRuntimeSettings(),
+      ...(pathname.startsWith("/settings") ? [fetchRuntimeSettings()] : []),
       ...(pathname.startsWith("/users") ? [fetchUsersInitial()] : []),
       ...(pathname.startsWith("/admins") ? [fetchAdmins()] : []),
     ]);
@@ -454,7 +474,7 @@ export default function Home() {
     );
 
     if (rejected) {
-      setGlobalError(toErrorMessage(rejected.reason));
+      toast.error(toErrorMessage(rejected.reason));
     }
 
     setIsLoading(false);
@@ -479,6 +499,9 @@ export default function Home() {
 
     if (savedTheme === "light" || savedTheme === "dark") {
       setTheme(savedTheme);
+      document.documentElement.classList.toggle("dark", savedTheme === "dark");
+    } else {
+      document.documentElement.classList.remove("dark");
     }
 
     if (savedSession) {
@@ -510,7 +533,26 @@ export default function Home() {
     }
 
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    document.documentElement.classList.toggle("dark", theme === "dark");
   }, [isHydrated, theme]);
+
+  useEffect(() => {
+    if (!selectedPresentation) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setSelectedPresentation(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [selectedPresentation]);
 
   useEffect(() => {
     if (!isHydrated) {
@@ -667,6 +709,10 @@ export default function Home() {
   ]);
 
   const activeSection = useMemo<SectionKey>(() => {
+    if (pathname.startsWith("/settings")) {
+      return "settings";
+    }
+
     if (pathname.startsWith("/users")) {
       return "users";
     }
@@ -693,6 +739,12 @@ export default function Home() {
         title: "Presentation Platform Command Deck",
         description:
           "Live platform overview with pending moderation items and quick navigation to operational pages.",
+      },
+      settings: {
+        eyebrow: "Configuration",
+        title: "Generation Settings",
+        description:
+          "Manage runtime configuration for generation behavior and prompt validation.",
       },
       users: {
         eyebrow: "User Intelligence",
@@ -727,6 +779,11 @@ export default function Home() {
         key: "overview" as const,
         label: "Overview",
         href: "/",
+      },
+      {
+        key: "settings" as const,
+        label: "Settings",
+        href: "/settings",
       },
       {
         key: "users" as const,
@@ -764,36 +821,7 @@ export default function Home() {
     return "border-emerald-300 bg-emerald-100 text-emerald-700";
   };
 
-  const handleRefreshToken = async () => {
-    if (!session?.refreshToken) {
-      return;
-    }
-
-    setGlobalError(null);
-
-    try {
-      const payload = await apiRequest<AuthResponse>(
-        "/admin/auth/refresh",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            refreshToken: session.refreshToken,
-          }),
-        },
-        false,
-      );
-
-      setSession(payload);
-      setProfile(payload.admin);
-      setGlobalInfo("Access token rotated (15m TTL renewed).");
-    } catch (error) {
-      setGlobalError(toErrorMessage(error));
-    }
-  };
-
   const handleLogout = async () => {
-    setGlobalError(null);
-
     if (session?.accessToken) {
       try {
         await apiRequest<{ success: boolean }>(
@@ -816,9 +844,9 @@ export default function Home() {
     setAdmins([]);
     setRuntimeSettings(null);
     setMainThemePromptCharacterLimitInput("");
+    setFreePresentationGenerationLimitInput("");
     setIsSavingRuntimeSettings(false);
-    setAdminsError(null);
-    setGlobalInfo("Session cleared.");
+    toast.success("Session cleared.");
     router.replace("/login");
   };
 
@@ -830,15 +858,15 @@ export default function Home() {
       );
 
       if (result.updated) {
-        setGlobalInfo(`Presentation #${id} moved to failed.`);
+        toast.success(`Presentation #${id} moved to failed.`);
       } else {
-        setGlobalInfo(`Presentation #${id} was not pending.`);
+        toast.info(`Presentation #${id} was not pending.`);
       }
 
       await fetchPresentations();
       await fetchOverview();
     } catch (error) {
-      setGlobalError(toErrorMessage(error));
+      toast.error(toErrorMessage(error));
     }
   };
 
@@ -857,45 +885,24 @@ export default function Home() {
 
       setBroadcastResult(result);
       setBroadcastMessage("");
-      setGlobalInfo("Broadcast queued successfully.");
+      toast.success("Broadcast queued successfully.");
     } catch (error) {
-      setGlobalError(toErrorMessage(error));
+      toast.error(toErrorMessage(error));
     }
   };
 
-  const handleSaveRuntimeSettings = async (
-    event: FormEvent<HTMLFormElement>,
+  const saveRuntimeSettings = async (
+    payload: Partial<RuntimeSettingsResponse>,
+    successMessage: string,
   ) => {
-    event.preventDefault();
-
-    const parsedLimit = Number(mainThemePromptCharacterLimitInput.trim());
-
-    if (!Number.isInteger(parsedLimit)) {
-      setGlobalError("Main theme prompt limit must be an integer.");
-      return;
-    }
-
-    if (
-      parsedLimit < MAIN_THEME_PROMPT_LIMIT_MIN ||
-      parsedLimit > MAIN_THEME_PROMPT_LIMIT_MAX
-    ) {
-      setGlobalError(
-        `Main theme prompt limit must be between ${MAIN_THEME_PROMPT_LIMIT_MIN} and ${MAIN_THEME_PROMPT_LIMIT_MAX}.`,
-      );
-      return;
-    }
-
     setIsSavingRuntimeSettings(true);
-    setGlobalError(null);
 
     try {
       const updated = await apiRequest<RuntimeSettingsResponse>(
         "/admin/settings",
         {
           method: "PATCH",
-          body: JSON.stringify({
-            mainThemePromptCharacterLimit: parsedLimit,
-          }),
+          body: JSON.stringify(payload),
         },
       );
 
@@ -903,12 +910,63 @@ export default function Home() {
       setMainThemePromptCharacterLimitInput(
         `${updated.mainThemePromptCharacterLimit}`,
       );
-      setGlobalInfo("Main theme prompt limit updated.");
+      setFreePresentationGenerationLimitInput(
+        `${updated.freePresentationGenerationLimit}`,
+      );
+      toast.success(successMessage);
     } catch (error) {
-      setGlobalError(toErrorMessage(error));
+      toast.error(toErrorMessage(error));
     } finally {
       setIsSavingRuntimeSettings(false);
     }
+  };
+
+  const handleSaveRuntimeSettings = async () => {
+    const parsedMainThemeLimit = Number(
+      mainThemePromptCharacterLimitInput.trim(),
+    );
+
+    if (!Number.isInteger(parsedMainThemeLimit)) {
+      toast.error("Main theme prompt limit must be an integer.");
+      return;
+    }
+
+    if (
+      parsedMainThemeLimit < MAIN_THEME_PROMPT_LIMIT_MIN ||
+      parsedMainThemeLimit > MAIN_THEME_PROMPT_LIMIT_MAX
+    ) {
+      toast.error(
+        `Main theme prompt limit must be between ${MAIN_THEME_PROMPT_LIMIT_MIN} and ${MAIN_THEME_PROMPT_LIMIT_MAX}.`,
+      );
+      return;
+    }
+
+    const parsedFreeGenerationLimit = Number(
+      freePresentationGenerationLimitInput.trim(),
+    );
+
+    if (!Number.isInteger(parsedFreeGenerationLimit)) {
+      toast.error("Free presentation generation limit must be an integer.");
+      return;
+    }
+
+    if (
+      parsedFreeGenerationLimit < FREE_PRESENTATION_GENERATION_LIMIT_MIN ||
+      parsedFreeGenerationLimit > FREE_PRESENTATION_GENERATION_LIMIT_MAX
+    ) {
+      toast.error(
+        `Free presentation generation limit must be between ${FREE_PRESENTATION_GENERATION_LIMIT_MIN} and ${FREE_PRESENTATION_GENERATION_LIMIT_MAX}.`,
+      );
+      return;
+    }
+
+    await saveRuntimeSettings(
+      {
+        mainThemePromptCharacterLimit: parsedMainThemeLimit,
+        freePresentationGenerationLimit: parsedFreeGenerationLimit,
+      },
+      "Runtime settings updated.",
+    );
   };
 
   const handleCreateAdmin = async (event: FormEvent<HTMLFormElement>) => {
@@ -934,10 +992,10 @@ export default function Home() {
       setAdminPassword("");
       setAdminRole("ADMIN");
 
-      setGlobalInfo("New admin account created.");
+      toast.success("New admin account created.");
       await fetchAdmins();
     } catch (error) {
-      setGlobalError(toErrorMessage(error));
+      toast.error(toErrorMessage(error));
     }
   };
 
@@ -976,25 +1034,15 @@ export default function Home() {
               </div>
 
               <div className="mt-5 rounded-2xl surface-muted p-3">
-                <button
-                  type="button"
-                  className="flex w-full items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] px-3 py-2 text-sm font-medium text-main transition hover:border-[var(--accent)]"
-                  onClick={() => {
-                    setTheme((current) =>
-                      current === "light" ? "dark" : "light",
-                    );
-                  }}
-                >
+                <div className="flex w-full items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] px-3 py-2 text-sm font-medium text-main">
                   <span>Theme</span>
-                  <span className="relative inline-flex h-6 w-11 items-center rounded-full border border-[var(--surface-border)] bg-[var(--surface-2)] px-0.5">
-                    <span
-                      className={cn(
-                        "absolute h-4 w-4 rounded-full bg-[var(--accent)] transition-transform",
-                        theme === "dark" ? "translate-x-5" : "translate-x-0",
-                      )}
-                    />
-                  </span>
-                </button>
+                  <AnimatedThemeToggler
+                    storageKey={THEME_STORAGE_KEY}
+                    onThemeChange={setTheme}
+                    aria-label="Toggle theme"
+                    className="inline-flex size-9 items-center justify-center rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] text-main transition hover:border-[var(--accent)]"
+                  />
+                </div>
               </div>
 
               <nav className="mt-5 space-y-2">
@@ -1042,20 +1090,16 @@ export default function Home() {
                         void refreshDashboard();
                       }}
                       disabled={!session || isLoading}
-                      className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm font-medium text-main transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-label={isLoading ? "Syncing all" : "Sync all"}
+                      title={isLoading ? "Syncing all" : "Sync all"}
+                      className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] text-main transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      {isLoading ? "Syncing..." : "Sync all"}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void handleRefreshToken();
-                      }}
-                      disabled={!session}
-                      className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm font-medium text-main transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      Rotate token
+                      {isLoading ? (
+                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      ) : (
+                        <RefreshCw className="size-4" aria-hidden="true" />
+                      )}
+                      <span className="sr-only">{isLoading ? "Syncing all" : "Sync all"}</span>
                     </button>
 
                     <button
@@ -1064,9 +1108,12 @@ export default function Home() {
                         void handleLogout();
                       }}
                       disabled={!session}
-                      className="rounded-xl border border-rose-300/50 bg-rose-200/30 px-3 py-2 text-sm font-medium text-rose-700 transition hover:bg-rose-300/35 disabled:cursor-not-allowed disabled:opacity-60"
+                      aria-label="Logout"
+                      title="Logout"
+                      className="inline-flex size-9 items-center justify-center rounded-xl border border-rose-300/50 bg-rose-200/30 text-rose-700 transition hover:bg-rose-300/35 disabled:cursor-not-allowed disabled:opacity-60"
                     >
-                      Logout
+                      <LogOut className="size-4" aria-hidden="true" />
+                      <span className="sr-only">Logout</span>
                     </button>
                   </div>
                 </div>
@@ -1081,18 +1128,6 @@ export default function Home() {
                   </p>
                 ) : null}
               </header>
-
-              {globalError ? (
-                <div className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-                  {globalError}
-                </div>
-              ) : null}
-
-              {globalInfo ? (
-                <div className="rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                  {globalInfo}
-                </div>
-              ) : null}
 
               {!session ? (
                 <section className="surface-glass rounded-3xl p-5 md:p-6">
@@ -1140,9 +1175,12 @@ export default function Home() {
                                     onClick={() => {
                                       void handleFailPresentation(item.id);
                                     }}
-                                    className="rounded-lg border border-rose-300 bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700"
+                                    aria-label="Mark failed"
+                                    title="Mark failed"
+                                    className="inline-flex size-7 items-center justify-center rounded-lg border border-rose-300 bg-rose-100 text-rose-700"
                                   >
-                                    Mark failed
+                                    <XCircle className="size-3.5" aria-hidden="true" />
+                                    <span className="sr-only">Mark failed</span>
                                   </button>
                                 </div>
                               ))
@@ -1329,65 +1367,162 @@ export default function Home() {
                             </div>
                           </div>
                         </BentoCard>
+                      </BentoGrid>
+                    ) : null}
 
-                        <BentoCard
-                          title="Generation Settings"
-                          description="GET/PATCH /admin/settings"
-                          className="surface-glass order-3 md:col-span-2"
-                          as="div"
-                        >
-                          <form
-                            className="space-y-3"
-                            onSubmit={handleSaveRuntimeSettings}
-                          >
+                    {activeSection === "settings" ? (
+                      <section>
+                        <article className="surface-glass rounded-3xl p-5">
+                          <div className="flex flex-wrap items-end justify-between gap-3">
                             <div>
-                              <p className="text-xs text-muted">
-                                Main theme prompt character limit
-                              </p>
-                              <p className="mt-1 text-sm text-main">
-                                Current: {" "}
-                                <span className="font-semibold">
-                                  {runtimeSettings?.mainThemePromptCharacterLimit ??
-                                    "-"}
-                                </span>
+                              <h3 className="text-lg font-semibold text-main">
+                                Runtime settings
+                              </h3>
+                              <p className="text-sm text-muted">
+                                Manage generation limits used by Telegram flow.
                               </p>
                             </div>
 
                             <div className="flex flex-wrap items-center gap-2">
-                              <input
-                                type="number"
-                                min={MAIN_THEME_PROMPT_LIMIT_MIN}
-                                max={MAIN_THEME_PROMPT_LIMIT_MAX}
-                                value={mainThemePromptCharacterLimitInput}
-                                onChange={(event) => {
-                                  setMainThemePromptCharacterLimitInput(
-                                    event.target.value,
-                                  );
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void fetchRuntimeSettings();
                                 }}
-                                className="w-36 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none focus:border-[var(--accent)]"
-                                required
-                              />
+                                disabled={!session || isSavingRuntimeSettings}
+                                aria-label="Reload settings"
+                                title="Reload settings"
+                                className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] text-main transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                <RefreshCw className="size-4" aria-hidden="true" />
+                                <span className="sr-only">Reload settings</span>
+                              </button>
 
                               <button
-                                type="submit"
+                                type="button"
+                                onClick={() => {
+                                  void handleSaveRuntimeSettings();
+                                }}
                                 disabled={
                                   isSavingRuntimeSettings ||
                                   !runtimeSettings ||
-                                  !mainThemePromptCharacterLimitInput.trim()
+                                  !mainThemePromptCharacterLimitInput.trim() ||
+                                  !freePresentationGenerationLimitInput.trim()
                                 }
-                                className="rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-sm font-semibold text-main disabled:cursor-not-allowed disabled:opacity-60"
+                                aria-label={
+                                  isSavingRuntimeSettings
+                                    ? "Saving settings"
+                                    : "Save all settings"
+                                }
+                                title={
+                                  isSavingRuntimeSettings
+                                    ? "Saving settings"
+                                    : "Save all settings"
+                                }
+                                className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] text-main disabled:cursor-not-allowed disabled:opacity-60"
                               >
-                                {isSavingRuntimeSettings ? "Saving..." : "Save"}
+                                {isSavingRuntimeSettings ? (
+                                  <Loader2
+                                    className="size-4 animate-spin"
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <Save className="size-4" aria-hidden="true" />
+                                )}
+                                <span className="sr-only">
+                                  {isSavingRuntimeSettings
+                                    ? "Saving settings"
+                                    : "Save all settings"}
+                                </span>
                               </button>
                             </div>
+                          </div>
 
-                            <p className="text-xs text-muted">
-                              Allowed range: {MAIN_THEME_PROMPT_LIMIT_MIN}-
-                              {MAIN_THEME_PROMPT_LIMIT_MAX} characters.
-                            </p>
-                          </form>
-                        </BentoCard>
-                      </BentoGrid>
+                          <div className="mt-4 grid gap-3 md:grid-cols-2">
+                            <article className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                              <div>
+                                <h4 className="text-xs font-semibold tracking-wide text-main uppercase">
+                                  Main theme prompt limit
+                                </h4>
+                                <p className="mt-0.5 text-[0.72rem] text-muted">
+                                  Max characters for main theme prompt.
+                                </p>
+                              </div>
+
+                              <div className="mt-2 space-y-2">
+                                <p className="text-xs text-main">
+                                  Current:{" "}
+                                  <span className="font-semibold">
+                                    {runtimeSettings?.mainThemePromptCharacterLimit ??
+                                      "-"}
+                                  </span>
+                                </p>
+
+                                <input
+                                  type="number"
+                                  min={MAIN_THEME_PROMPT_LIMIT_MIN}
+                                  max={MAIN_THEME_PROMPT_LIMIT_MAX}
+                                  value={mainThemePromptCharacterLimitInput}
+                                  onChange={(event) => {
+                                    setMainThemePromptCharacterLimitInput(
+                                      event.target.value,
+                                    );
+                                  }}
+                                  className="w-28 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2.5 py-1.5 text-xs text-main outline-none focus:border-[var(--accent)]"
+                                  required
+                                />
+
+                                <p className="text-[0.72rem] text-muted">
+                                  Allowed range: {MAIN_THEME_PROMPT_LIMIT_MIN}-
+                                  {MAIN_THEME_PROMPT_LIMIT_MAX} characters.
+                                </p>
+                              </div>
+                            </article>
+
+                            <article className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                              <div>
+                                <h4 className="text-xs font-semibold tracking-wide text-main uppercase">
+                                  Free generation limit
+                                </h4>
+                                <p className="mt-0.5 text-[0.72rem] text-muted">
+                                  Free presentation quota per 24 hours.
+                                </p>
+                              </div>
+
+                              <div className="mt-2 space-y-2">
+                                <p className="text-xs text-main">
+                                  Current:{" "}
+                                  <span className="font-semibold">
+                                    {runtimeSettings?.freePresentationGenerationLimit ??
+                                      "-"}
+                                  </span>
+                                </p>
+
+                                <input
+                                  type="number"
+                                  min={FREE_PRESENTATION_GENERATION_LIMIT_MIN}
+                                  max={FREE_PRESENTATION_GENERATION_LIMIT_MAX}
+                                  value={freePresentationGenerationLimitInput}
+                                  onChange={(event) => {
+                                    setFreePresentationGenerationLimitInput(
+                                      event.target.value,
+                                    );
+                                  }}
+                                  className="w-28 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2.5 py-1.5 text-xs text-main outline-none focus:border-[var(--accent)]"
+                                  required
+                                />
+
+                                <p className="text-[0.72rem] text-muted">
+                                  Allowed range:{" "}
+                                  {FREE_PRESENTATION_GENERATION_LIMIT_MIN}-
+                                  {FREE_PRESENTATION_GENERATION_LIMIT_MAX} per
+                                  24 hours.
+                                </p>
+                              </div>
+                            </article>
+                          </div>
+                        </article>
+                      </section>
                     ) : null}
 
                     {activeSection === "users" ? (
@@ -1427,9 +1562,12 @@ export default function Home() {
                                 onClick={() => {
                                   void fetchUsers();
                                 }}
-                                className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm font-medium text-main"
+                                aria-label="Reload users"
+                                title="Reload users"
+                                className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] text-main"
                               >
-                                Reload
+                                <RefreshCw className="size-4" aria-hidden="true" />
+                                <span className="sr-only">Reload users</span>
                               </button>
                             </div>
                           </div>
@@ -1531,9 +1669,12 @@ export default function Home() {
                                 onClick={() => {
                                   void fetchPresentations();
                                 }}
-                                className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm font-medium text-main"
+                                aria-label="Reload presentations"
+                                title="Reload presentations"
+                                className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] text-main"
                               >
-                                Reload
+                                <RefreshCw className="size-4" aria-hidden="true" />
+                                <span className="sr-only">Reload presentations</span>
                               </button>
                             </div>
                           </div>
@@ -1563,7 +1704,18 @@ export default function Home() {
                                         #{item.id}
                                       </td>
                                       <td className="px-3 py-2 text-main">
-                                        {item.metadata?.prompt ?? "Untitled prompt"}
+                                        <p
+                                          className="max-w-xs whitespace-normal break-words"
+                                          style={{
+                                            display: "-webkit-box",
+                                            WebkitBoxOrient: "vertical",
+                                            WebkitLineClamp: 3,
+                                            overflow: "hidden",
+                                          }}
+                                        >
+                                          {item.metadata?.prompt ??
+                                            "Untitled prompt"}
+                                        </p>
                                       </td>
                                       <td className="px-3 py-2 text-main">
                                         <p>{item.firstName}</p>
@@ -1591,19 +1743,41 @@ export default function Home() {
                                         {formatDate(item.createdAt)}
                                       </td>
                                       <td className="px-3 py-2 text-main">
-                                        {item.status === "pending" ? (
+                                        <div className="flex items-center gap-2">
                                           <button
                                             type="button"
                                             onClick={() => {
-                                              void handleFailPresentation(item.id);
+                                              setSelectedPresentation(item);
                                             }}
-                                            className="rounded-lg border border-rose-300 bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700"
+                                            aria-label={`View presentation #${item.id}`}
+                                            title="View presentation"
+                                            className="inline-flex size-7 items-center justify-center rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] text-main"
                                           >
-                                            Force fail
+                                            <Eye className="size-3.5" aria-hidden="true" />
+                                            <span className="sr-only">
+                                              View presentation
+                                            </span>
                                           </button>
-                                        ) : (
-                                          <span className="text-xs text-muted">-</span>
-                                        )}
+
+                                          {item.status === "pending" ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                void handleFailPresentation(
+                                                  item.id,
+                                                );
+                                              }}
+                                              aria-label="Force fail"
+                                              title="Force fail"
+                                              className="inline-flex size-7 items-center justify-center rounded-lg border border-rose-300 bg-rose-100 text-rose-700"
+                                            >
+                                              <XCircle className="size-3.5" aria-hidden="true" />
+                                              <span className="sr-only">
+                                                Force fail
+                                              </span>
+                                            </button>
+                                          ) : null}
+                                        </div>
                                       </td>
                                     </tr>
                                   ))}
@@ -1654,9 +1828,12 @@ export default function Home() {
                               </p>
                               <button
                                 type="submit"
-                                className="rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-sm font-semibold text-main"
+                                aria-label="Send broadcast"
+                                title="Send broadcast"
+                                className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] text-main"
                               >
-                                Send broadcast
+                                <Send className="size-4" aria-hidden="true" />
+                                <span className="sr-only">Send broadcast</span>
                               </button>
                             </div>
                           </form>
@@ -1692,13 +1869,13 @@ export default function Home() {
                             only)
                           </p>
 
-                          {adminsError ? (
-                            <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
-                              {adminsError}
-                            </div>
-                          ) : (
-                            <div className="mt-4 space-y-2">
-                              {admins.map((admin) => (
+                          <div className="mt-4 space-y-2">
+                            {admins.length === 0 ? (
+                              <p className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-muted">
+                                No admins found.
+                              </p>
+                            ) : (
+                              admins.map((admin) => (
                                 <div
                                   key={admin.id}
                                   className="flex items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2"
@@ -1715,9 +1892,9 @@ export default function Home() {
                                     {admin.role}
                                   </span>
                                 </div>
-                              ))}
-                            </div>
-                          )}
+                              ))
+                            )}
+                          </div>
 
                           {profile?.role === "SUPERADMIN" ? (
                             <form
@@ -1768,9 +1945,12 @@ export default function Home() {
 
                               <button
                                 type="submit"
-                                className="sm:col-span-2 rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-sm font-semibold text-main"
+                                aria-label="Create admin"
+                                title="Create admin"
+                                className="sm:col-span-2 inline-flex items-center justify-center rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-main"
                               >
-                                Create admin
+                                <UserPlus className="size-4" aria-hidden="true" />
+                                <span className="sr-only">Create admin</span>
                               </button>
                             </form>
                           ) : (
@@ -1785,6 +1965,84 @@ export default function Home() {
                   </div>
                 </>
               )}
+
+              {selectedPresentation ? (
+                <div
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
+                  onClick={() => {
+                    setSelectedPresentation(null);
+                  }}
+                >
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={`Presentation #${selectedPresentation.id}`}
+                    className="w-full max-w-2xl overflow-hidden rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] shadow-2xl"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                    }}
+                  >
+                    <div className="flex items-center justify-between border-b border-[var(--surface-border)] bg-[var(--surface-2)] px-4 py-3">
+                      <div>
+                        <p className="text-sm font-semibold text-main">
+                          Presentation #{selectedPresentation.id}
+                        </p>
+                        <p className="text-xs text-muted">
+                          {selectedPresentation.status} -{" "}
+                          {formatDate(selectedPresentation.createdAt)}
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedPresentation(null);
+                        }}
+                        className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2.5 py-1 text-xs font-semibold text-main"
+                      >
+                        Close
+                      </button>
+                    </div>
+
+                    <div className="max-h-[70vh] space-y-4 overflow-y-auto p-4">
+                      <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3 text-sm text-main">
+                        <p>
+                          User: <span className="font-semibold">{selectedPresentation.firstName}</span>
+                        </p>
+                        <p className="mt-1 text-xs text-muted">
+                          @{selectedPresentation.username ?? "no_username"} -
+                          Telegram ID: {selectedPresentation.telegramId}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                        <p className="text-xs font-semibold tracking-wide text-main uppercase">
+                          Prompt
+                        </p>
+                        <p className="mt-2 whitespace-pre-wrap break-words text-sm text-main">
+                          {selectedPresentation.metadata?.prompt ??
+                            "Untitled prompt"}
+                        </p>
+                      </div>
+
+                      <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3 text-sm text-main">
+                        <p>
+                          Language: {selectedPresentation.metadata?.language ?? "-"}
+                        </p>
+                        <p className="mt-1">
+                          Slides: {selectedPresentation.metadata?.pageCount ?? "-"}
+                        </p>
+                        <p className="mt-1">
+                          Uses images: {selectedPresentation.metadata?.useImages ? "Yes" : "No"}
+                        </p>
+                        <p className="mt-1 break-all">
+                          File: {selectedPresentation.metadata?.fileName ?? "-"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </main>
           </div>
         </div>
