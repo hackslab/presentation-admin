@@ -459,6 +459,7 @@ export default function Home() {
   const usersRequestVersionRef = useRef(0);
   const presentationsRequestVersionRef = useRef(0);
   const lastDashboardPathRef = useRef<string | null>(null);
+  const broadcastImageInputRef = useRef<HTMLInputElement | null>(null);
 
   const apiRequest = useCallback(
     async <T,>(
@@ -1290,6 +1291,10 @@ export default function Home() {
   const clearBroadcastImage = () => {
     if (broadcastImagePreviewUrl) {
       URL.revokeObjectURL(broadcastImagePreviewUrl);
+    }
+
+    if (broadcastImageInputRef.current) {
+      broadcastImageInputRef.current.value = "";
     }
 
     setBroadcastImagePreviewUrl(null);
@@ -2534,6 +2539,7 @@ export default function Home() {
                                   <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-xs font-medium text-main">
                                     Attach image
                                     <input
+                                      ref={broadcastImageInputRef}
                                       type="file"
                                       accept="image/png,image/jpeg,image/webp,image/gif"
                                       className="sr-only"
