@@ -366,9 +366,9 @@ export default function Home() {
   const [userLimit, setUserLimit] = useState(20);
   const [usersTotalCount, setUsersTotalCount] = useState(0);
   const [usersPage, setUsersPage] = useState(1);
-  const [usersAfterHistory, setUsersAfterHistory] = useState<Array<string | null>>([
-    null,
-  ]);
+  const [usersAfterHistory, setUsersAfterHistory] = useState<
+    Array<string | null>
+  >([null]);
   const [usersPageInfo, setUsersPageInfo] = useState<ConnectionPageInfo>(
     EMPTY_CONNECTION_PAGE_INFO,
   );
@@ -509,13 +509,16 @@ export default function Home() {
     [apiRequest, debouncedUserSearch, userLimit],
   );
 
-  const fetchUsersFirstPage = useCallback(async (search = debouncedUserSearch) => {
-    setUsersPage(1);
-    setUsersAfterHistory([null]);
-    setUsersPageInfo(EMPTY_CONNECTION_PAGE_INFO);
+  const fetchUsersFirstPage = useCallback(
+    async (search = debouncedUserSearch) => {
+      setUsersPage(1);
+      setUsersAfterHistory([null]);
+      setUsersPageInfo(EMPTY_CONNECTION_PAGE_INFO);
 
-    await fetchUsersPage({ page: 1, after: null, search });
-  }, [debouncedUserSearch, fetchUsersPage]);
+      await fetchUsersPage({ page: 1, after: null, search });
+    },
+    [debouncedUserSearch, fetchUsersPage],
+  );
 
   const fetchUsersCurrentPage = useCallback(async () => {
     const after = usersAfterHistory[usersPage - 1] ?? null;
@@ -536,7 +539,12 @@ export default function Home() {
     });
 
     await fetchUsersPage({ page: nextPage, after: nextAfter });
-  }, [fetchUsersPage, usersPage, usersPageInfo.endCursor, usersPageInfo.hasNextPage]);
+  }, [
+    fetchUsersPage,
+    usersPage,
+    usersPageInfo.endCursor,
+    usersPageInfo.hasNextPage,
+  ]);
 
   const fetchUsersPreviousPage = useCallback(async () => {
     if (usersPage <= 1) {
@@ -552,7 +560,9 @@ export default function Home() {
   }, [fetchUsersPage, usersAfterHistory, usersPage]);
 
   const fetchOverviewUsers = useCallback(async () => {
-    const data = await apiRequest<UsersConnectionResponse>("/admin/users?first=200");
+    const data = await apiRequest<UsersConnectionResponse>(
+      "/admin/users?first=200",
+    );
     setOverviewUsers(data.nodes);
     setHasLoadedOverviewUsers(true);
   }, [apiRequest]);
@@ -616,7 +626,10 @@ export default function Home() {
   }, [fetchPresentationsPage, presentationsAfterHistory, presentationsPage]);
 
   const fetchPresentationsNextPage = useCallback(async () => {
-    if (!presentationsPageInfo.hasNextPage || !presentationsPageInfo.endCursor) {
+    if (
+      !presentationsPageInfo.hasNextPage ||
+      !presentationsPageInfo.endCursor
+    ) {
       return;
     }
 
@@ -847,7 +860,11 @@ export default function Home() {
   }, [isHydrated, userSearch]);
 
   useEffect(() => {
-    if (!isHydrated || !session?.accessToken || !pathname.startsWith("/users")) {
+    if (
+      !isHydrated ||
+      !session?.accessToken ||
+      !pathname.startsWith("/users")
+    ) {
       return;
     }
 
@@ -1084,11 +1101,6 @@ export default function Home() {
         href: "/",
       },
       {
-        key: "settings" as const,
-        label: "Settings",
-        href: "/settings",
-      },
-      {
         key: "users" as const,
         label: "Users",
         href: "/users",
@@ -1107,6 +1119,11 @@ export default function Home() {
         key: "admins" as const,
         label: "Admins",
         href: "/admins",
+      },
+      {
+        key: "settings" as const,
+        label: "Settings",
+        href: "/settings",
       },
     ],
     [],
@@ -2022,7 +2039,8 @@ export default function Home() {
 
                             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-xs text-muted">
                               <p>
-                                Page {usersPage} - {users.length} shown of {usersTotalCount}
+                                Page {usersPage} - {users.length} shown of{" "}
+                                {usersTotalCount}
                               </p>
                               <div className="flex items-center gap-2">
                                 <button
@@ -2285,7 +2303,9 @@ export default function Home() {
 
                             <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-xs text-muted">
                               <p>
-                                Page {presentationsPage} - {presentations.length} shown of {presentationsTotalCount}
+                                Page {presentationsPage} -{" "}
+                                {presentations.length} shown of{" "}
+                                {presentationsTotalCount}
                               </p>
                               <div className="flex items-center gap-2">
                                 <button
@@ -2294,7 +2314,8 @@ export default function Home() {
                                     void fetchPresentationsPreviousPage();
                                   }}
                                   disabled={
-                                    isPresentationsLoading || presentationsPage <= 1
+                                    isPresentationsLoading ||
+                                    presentationsPage <= 1
                                   }
                                   className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2 py-1 text-main disabled:cursor-not-allowed disabled:opacity-60"
                                 >
@@ -2484,12 +2505,16 @@ export default function Home() {
                                   <select
                                     value={adminRole}
                                     onChange={(event) => {
-                                      setAdminRole(event.target.value as AdminRole);
+                                      setAdminRole(
+                                        event.target.value as AdminRole,
+                                      );
                                     }}
                                     className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-main outline-none focus:border-[var(--accent)]"
                                   >
                                     <option value="ADMIN">ADMIN</option>
-                                    <option value="SUPERADMIN">SUPERADMIN</option>
+                                    <option value="SUPERADMIN">
+                                      SUPERADMIN
+                                    </option>
                                   </select>
 
                                   <button
@@ -2502,7 +2527,9 @@ export default function Home() {
                                       className="size-4"
                                       aria-hidden="true"
                                     />
-                                    <span className="sr-only">Create admin</span>
+                                    <span className="sr-only">
+                                      Create admin
+                                    </span>
                                   </button>
                                 </form>
                               ) : (
