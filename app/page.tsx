@@ -406,6 +406,7 @@ export default function Home() {
 
   const usersRequestVersionRef = useRef(0);
   const presentationsRequestVersionRef = useRef(0);
+  const hasBootstrappedDashboardRef = useRef(false);
 
   const apiRequest = useCallback(
     async <T,>(
@@ -804,8 +805,22 @@ export default function Home() {
       return;
     }
 
+    if (hasBootstrappedDashboardRef.current) {
+      return;
+    }
+
+    hasBootstrappedDashboardRef.current = true;
+
     void refreshDashboard();
   }, [isHydrated, refreshDashboard, session?.accessToken]);
+
+  useEffect(() => {
+    if (session?.accessToken) {
+      return;
+    }
+
+    hasBootstrappedDashboardRef.current = false;
+  }, [session?.accessToken]);
 
   useEffect(() => {
     if (!isHydrated || session?.accessToken) {
