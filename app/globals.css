@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+:root {
+  --font-space-grotesk: "Segoe UI";
+  --font-space-mono: "Consolas";
+}
+
 body {
   margin: 0;
   font-family: var(--font-space-grotesk), "Segoe UI", sans-serif;
