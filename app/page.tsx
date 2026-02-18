@@ -1126,9 +1126,18 @@ export default function Home() {
     setProfile(null);
     setOverview(null);
     setUsers([]);
+    setDebouncedUserSearch("");
+    setUsersTotalCount(0);
+    setUsersPage(1);
+    setUsersAfterHistory([null]);
+    setUsersPageInfo(EMPTY_CONNECTION_PAGE_INFO);
     setOverviewUsers([]);
     setHasLoadedOverviewUsers(false);
     setPresentations([]);
+    setPresentationsTotalCount(0);
+    setPresentationsPage(1);
+    setPresentationsAfterHistory([null]);
+    setPresentationsPageInfo(EMPTY_CONNECTION_PAGE_INFO);
     setAdmins([]);
     setRuntimeSettings(null);
     setMainThemePromptCharacterLimitInput("");
@@ -1151,7 +1160,7 @@ export default function Home() {
         toast.info(`Presentation #${id} was not pending.`);
       }
 
-      await fetchPresentations();
+      await fetchPresentationsCurrentPage();
       await fetchOverview();
     } catch (error) {
       toast.error(toErrorMessage(error));
