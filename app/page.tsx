@@ -1913,7 +1913,7 @@ export default function Home() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  void fetchUsers();
+                                  void fetchUsersCurrentPage();
                                 }}
                                 disabled={isUsersLoading}
                                 aria-label="Reload users"
@@ -1970,7 +1970,7 @@ export default function Home() {
                                         </tr>
                                       ),
                                     )
-                                  : users.slice(0, 10).map((user) => (
+                                  : users.map((user) => (
                                       <tr
                                         key={user.id}
                                         className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
@@ -2002,6 +2002,38 @@ export default function Home() {
                                 No users found for this filter.
                               </p>
                             ) : null}
+
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-xs text-muted">
+                              <p>
+                                Page {usersPage} - {users.length} shown of {usersTotalCount}
+                              </p>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void fetchUsersPreviousPage();
+                                  }}
+                                  disabled={isUsersLoading || usersPage <= 1}
+                                  className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2 py-1 text-main disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Prev
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void fetchUsersNextPage();
+                                  }}
+                                  disabled={
+                                    isUsersLoading ||
+                                    !usersPageInfo.hasNextPage ||
+                                    !usersPageInfo.endCursor
+                                  }
+                                  className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2 py-1 text-main disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Next
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         </article>
                       </section>
@@ -2054,7 +2086,7 @@ export default function Home() {
                               <button
                                 type="button"
                                 onClick={() => {
-                                  void fetchPresentations();
+                                  void fetchPresentationsCurrentPage();
                                 }}
                                 disabled={isPresentationsLoading}
                                 aria-label="Reload presentations"
@@ -2233,6 +2265,40 @@ export default function Home() {
                                 No presentations found for selected filter.
                               </p>
                             ) : null}
+
+                            <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-xs text-muted">
+                              <p>
+                                Page {presentationsPage} - {presentations.length} shown of {presentationsTotalCount}
+                              </p>
+                              <div className="flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void fetchPresentationsPreviousPage();
+                                  }}
+                                  disabled={
+                                    isPresentationsLoading || presentationsPage <= 1
+                                  }
+                                  className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2 py-1 text-main disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Prev
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void fetchPresentationsNextPage();
+                                  }}
+                                  disabled={
+                                    isPresentationsLoading ||
+                                    !presentationsPageInfo.hasNextPage ||
+                                    !presentationsPageInfo.endCursor
+                                  }
+                                  className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2 py-1 text-main disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  Next
+                                </button>
+                              </div>
+                            </div>
                           </div>
                         </article>
                       </section>
