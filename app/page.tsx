@@ -406,7 +406,7 @@ export default function Home() {
 
   const usersRequestVersionRef = useRef(0);
   const presentationsRequestVersionRef = useRef(0);
-  const hasBootstrappedDashboardRef = useRef(false);
+  const lastDashboardPathRef = useRef<string | null>(null);
 
   const apiRequest = useCallback(
     async <T,>(
@@ -805,21 +805,21 @@ export default function Home() {
       return;
     }
 
-    if (hasBootstrappedDashboardRef.current) {
+    if (lastDashboardPathRef.current === pathname) {
       return;
     }
 
-    hasBootstrappedDashboardRef.current = true;
+    lastDashboardPathRef.current = pathname;
 
     void refreshDashboard();
-  }, [isHydrated, refreshDashboard, session?.accessToken]);
+  }, [isHydrated, pathname, refreshDashboard, session?.accessToken]);
 
   useEffect(() => {
     if (session?.accessToken) {
       return;
     }
 
-    hasBootstrappedDashboardRef.current = false;
+    lastDashboardPathRef.current = null;
   }, [session?.accessToken]);
 
   useEffect(() => {
