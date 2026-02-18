@@ -1,0 +1,17 @@
+[variables]
+NODE_ENV = "production"
+NPM_CONFIG_PRODUCTION = "false"
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[phases.install]
+cmds = ["npm ci --no-audit --prefer-offline"]
+cacheDirectories = ["/root/.npm"]
+
+[phases.build]
+cmds = ["npm run build", "npm prune --omit=dev"]
+cacheDirectories = [".next/cache"]
+
+[start]
+cmd = "npm run start"
