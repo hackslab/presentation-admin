@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
 import { BentoCard, BentoGrid } from "@/components/ui/bento-grid";
+import { NumberTicker } from "@/components/ui/number-ticker";
 import { ShineBorder } from "@/components/ui/shine-border";
 import { cn } from "@/lib/utils";
 
@@ -82,18 +83,126 @@ interface BroadcastResult {
   failed: number;
 }
 
+interface RuntimeSettingsResponse {
+  mainThemePromptCharacterLimit: number;
+}
+
 interface ApiError {
   message?: string | string[];
   error?: string;
   statusCode?: number;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
 const API_PROXY_PREFIX = "/backend";
 const THEME_STORAGE_KEY = "axiom-admin-theme";
 const SESSION_STORAGE_KEY = "axiom-admin-session";
+const STATS_CACHE_STORAGE_KEY = "axiom-admin-stats-cache";
+const MAIN_THEME_PROMPT_LIMIT_MIN = 10;
+const MAIN_THEME_PROMPT_LIMIT_MAX = 4096;
 
-type SectionKey = "overview" | "users" | "presentations" | "broadcast" | "admins";
+interface JobCompositionStats {
+  totalJobs: number;
+  completionRate: number;
+  pendingRate: number;
+  failureRate: number;
+}
+
+interface UserLifecycleSnapshot {
+  startedOnly: number;
+  registeredNoGeneration: number;
+  registeredAndGenerated: number;
+}
+
+interface CachedStatistics {
+  jobComposition: JobCompositionStats;
+  userLifecycle: UserLifecycleSnapshot;
+}
+
+const EMPTY_JOB_COMPOSITION: JobCompositionStats = {
+  totalJobs: 0,
+  completionRate: 0,
+  pendingRate: 0,
+  failureRate: 0,
+};
+
+const EMPTY_USER_LIFECYCLE: UserLifecycleSnapshot = {
+  startedOnly: 0,
+  registeredNoGeneration: 0,
+  registeredAndGenerated: 0,
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  return value as Record<string, unknown>;
+}
+
+function toNonNegative(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return 0;
+  }
+
+  return Math.max(value, 0);
+}
+
+function parseCachedStatistics(
+  rawValue: string | null,
+): CachedStatistics | null {
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as unknown;
+    const root = asRecord(parsed);
+
+    if (!root) {
+      return null;
+    }
+
+    const jobRaw = asRecord(root.jobComposition);
+    const lifecycleRaw = asRecord(root.userLifecycle);
+
+    if (!jobRaw || !lifecycleRaw) {
+      return null;
+    }
+
+    return {
+      jobComposition: {
+        totalJobs: toNonNegative(jobRaw.totalJobs),
+        completionRate: clampNumber(
+          toNonNegative(jobRaw.completionRate),
+          0,
+          100,
+        ),
+        pendingRate: clampNumber(toNonNegative(jobRaw.pendingRate), 0, 100),
+        failureRate: clampNumber(toNonNegative(jobRaw.failureRate), 0, 100),
+      },
+      userLifecycle: {
+        startedOnly: toNonNegative(lifecycleRaw.startedOnly),
+        registeredNoGeneration: toNonNegative(
+          lifecycleRaw.registeredNoGeneration,
+        ),
+        registeredAndGenerated: toNonNegative(
+          lifecycleRaw.registeredAndGenerated,
+        ),
+      },
+    };
+  } catch {
+    return null;
+  }
+}
+
+type SectionKey =
+  | "overview"
+  | "users"
+  | "presentations"
+  | "broadcast"
+  | "admins";
 
 function toErrorMessage(value: unknown): string {
   if (value instanceof Error) {
@@ -160,17 +269,6 @@ function formatDate(dateString: string | null | undefined): string {
   }).format(parsedDate);
 }
 
-function formatNumber(value: number): string {
-  return new Intl.NumberFormat("en-US").format(value);
-}
-
-function formatPercent(value: number): string {
-  return `${new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 1,
-  }).format(value)}%`;
-}
-
 function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -187,6 +285,9 @@ export default function Home() {
   const [overview, setOverview] = useState<OverviewResponse | null>(null);
   const [users, setUsers] = useState<UserRow[]>([]);
   const [overviewUsers, setOverviewUsers] = useState<UserRow[]>([]);
+  const [hasLoadedOverviewUsers, setHasLoadedOverviewUsers] = useState(false);
+  const [cachedStatistics, setCachedStatistics] =
+    useState<CachedStatistics | null>(null);
   const [presentations, setPresentations] = useState<PresentationRow[]>([]);
   const [admins, setAdmins] = useState<AdminProfile[]>([]);
 
@@ -199,10 +300,17 @@ export default function Home() {
   const [userLimit, setUserLimit] = useState(20);
 
   const [presentationLimit, setPresentationLimit] = useState(15);
-  const [presentationStatus, setPresentationStatus] = useState<PresentationStatusFilter>("pending");
+  const [presentationStatus, setPresentationStatus] =
+    useState<PresentationStatusFilter>("all");
 
   const [broadcastMessage, setBroadcastMessage] = useState("");
-  const [broadcastResult, setBroadcastResult] = useState<BroadcastResult | null>(null);
+  const [broadcastResult, setBroadcastResult] =
+    useState<BroadcastResult | null>(null);
+  const [runtimeSettings, setRuntimeSettings] =
+    useState<RuntimeSettingsResponse | null>(null);
+  const [mainThemePromptCharacterLimitInput, setMainThemePromptCharacterLimitInput] =
+    useState("");
+  const [isSavingRuntimeSettings, setIsSavingRuntimeSettings] = useState(false);
 
   const [adminName, setAdminName] = useState("");
   const [adminUsername, setAdminUsername] = useState("");
@@ -210,7 +318,11 @@ export default function Home() {
   const [adminRole, setAdminRole] = useState<AdminRole>("ADMIN");
 
   const apiRequest = useCallback(
-    async <T,>(path: string, options: RequestInit = {}, requiresAuth = true): Promise<T> => {
+    async <T,>(
+      path: string,
+      options: RequestInit = {},
+      requiresAuth = true,
+    ): Promise<T> => {
       const method = (options.method ?? "GET").toUpperCase();
       const headers = new Headers(options.headers);
 
@@ -233,10 +345,12 @@ export default function Home() {
       });
 
       if (!response.ok) {
-        const errorPayload = await parseResponseBody<unknown>(response).catch(() => null);
+        const errorPayload = await parseResponseBody<unknown>(response).catch(
+          () => null,
+        );
         const errorMessage = parseApiError(
           errorPayload,
-          `${method} ${path} failed with ${response.status}`
+          `${method} ${path} failed with ${response.status}`,
         );
 
         throw new Error(errorMessage);
@@ -244,7 +358,7 @@ export default function Home() {
 
       return parseResponseBody<T>(response);
     },
-    [session?.accessToken]
+    [session?.accessToken],
   );
 
   const fetchMe = useCallback(async () => {
@@ -266,13 +380,21 @@ export default function Home() {
 
     query.set("limit", `${Math.max(1, Math.min(200, userLimit))}`);
 
-    const data = await apiRequest<UserRow[]>(`/admin/users?${query.toString()}`);
+    const data = await apiRequest<UserRow[]>(
+      `/admin/users?${query.toString()}`,
+    );
     setUsers(data);
   }, [apiRequest, userLimit, userSearch]);
+
+  const fetchUsersInitial = useCallback(async () => {
+    const data = await apiRequest<UserRow[]>("/admin/users?limit=20");
+    setUsers(data);
+  }, [apiRequest]);
 
   const fetchOverviewUsers = useCallback(async () => {
     const data = await apiRequest<UserRow[]>("/admin/users?limit=200");
     setOverviewUsers(data);
+    setHasLoadedOverviewUsers(true);
   }, [apiRequest]);
 
   const fetchPresentations = useCallback(async () => {
@@ -284,9 +406,19 @@ export default function Home() {
 
     query.set("limit", `${Math.max(1, Math.min(200, presentationLimit))}`);
 
-    const data = await apiRequest<PresentationRow[]>(`/admin/presentations?${query.toString()}`);
+    const data = await apiRequest<PresentationRow[]>(
+      `/admin/presentations?${query.toString()}`,
+    );
     setPresentations(data);
   }, [apiRequest, presentationLimit, presentationStatus]);
+
+  const fetchRuntimeSettings = useCallback(async () => {
+    const data = await apiRequest<RuntimeSettingsResponse>("/admin/settings");
+    setRuntimeSettings(data);
+    setMainThemePromptCharacterLimitInput(
+      `${data.mainThemePromptCharacterLimit}`,
+    );
+  }, [apiRequest]);
 
   const fetchAdmins = useCallback(async () => {
     try {
@@ -311,13 +443,14 @@ export default function Home() {
       fetchMe(),
       fetchOverview(),
       fetchOverviewUsers(),
-      fetchUsers(),
       fetchPresentations(),
-      fetchAdmins(),
+      fetchRuntimeSettings(),
+      ...(pathname.startsWith("/users") ? [fetchUsersInitial()] : []),
+      ...(pathname.startsWith("/admins") ? [fetchAdmins()] : []),
     ]);
 
     const rejected = results.find(
-      (item): item is PromiseRejectedResult => item.status === "rejected"
+      (item): item is PromiseRejectedResult => item.status === "rejected",
     );
 
     if (rejected) {
@@ -325,11 +458,24 @@ export default function Home() {
     }
 
     setIsLoading(false);
-  }, [fetchAdmins, fetchMe, fetchOverview, fetchOverviewUsers, fetchPresentations, fetchUsers, session?.accessToken]);
+  }, [
+    pathname,
+    fetchAdmins,
+    fetchMe,
+    fetchOverview,
+    fetchOverviewUsers,
+    fetchPresentations,
+    fetchRuntimeSettings,
+    fetchUsersInitial,
+    session?.accessToken,
+  ]);
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
     const savedSession = window.localStorage.getItem(SESSION_STORAGE_KEY);
+    const savedStatistics = window.localStorage.getItem(
+      STATS_CACHE_STORAGE_KEY,
+    );
 
     if (savedTheme === "light" || savedTheme === "dark") {
       setTheme(savedTheme);
@@ -342,6 +488,16 @@ export default function Home() {
         setProfile(parsedSession.admin);
       } catch {
         window.localStorage.removeItem(SESSION_STORAGE_KEY);
+      }
+    }
+
+    if (savedStatistics) {
+      const parsedStatistics = parseCachedStatistics(savedStatistics);
+
+      if (parsedStatistics) {
+        setCachedStatistics(parsedStatistics);
+      } else {
+        window.localStorage.removeItem(STATS_CACHE_STORAGE_KEY);
       }
     }
 
@@ -382,42 +538,133 @@ export default function Home() {
       return;
     }
 
-    const nextPath = pathname !== "/" ? `?next=${encodeURIComponent(pathname)}` : "";
+    const nextPath =
+      pathname !== "/" ? `?next=${encodeURIComponent(pathname)}` : "";
     router.replace(`/login${nextPath}`);
   }, [isHydrated, pathname, router, session?.accessToken]);
 
-  const pendingPresentations = presentations.filter((item) => item.status === "pending");
+  const pendingPresentations = presentations.filter(
+    (item) => item.status === "pending",
+  );
 
   const generatedUsersCount = useMemo(
     () => overviewUsers.filter((user) => user.totalGenerations > 0).length,
-    [overviewUsers]
+    [overviewUsers],
   );
+
+  const liveJobCompositionStats = useMemo<JobCompositionStats | null>(() => {
+    if (!overview?.statistics) {
+      return null;
+    }
+
+    return {
+      totalJobs: Math.max(overview.statistics.totalJobs, 0),
+      completionRate: clampNumber(overview.statistics.completionRate, 0, 100),
+      pendingRate: clampNumber(overview.statistics.pendingRate, 0, 100),
+      failureRate: clampNumber(overview.statistics.failureRate, 0, 100),
+    };
+  }, [overview]);
+
+  const cachedJobComposition =
+    cachedStatistics?.jobComposition ?? EMPTY_JOB_COMPOSITION;
+  const jobCompositionStats = liveJobCompositionStats ?? cachedJobComposition;
+  const usingCachedJobComposition = !liveJobCompositionStats;
+
+  const liveUserLifecycleSnapshot =
+    useMemo<UserLifecycleSnapshot | null>(() => {
+      if (!overview || !hasLoadedOverviewUsers) {
+        return null;
+      }
+
+      return {
+        startedOnly: Math.max(
+          (overview.totalUsers ?? 0) - (overview.registeredUsers ?? 0),
+          0,
+        ),
+        registeredNoGeneration: Math.max(
+          (overview.registeredUsers ?? 0) - generatedUsersCount,
+          0,
+        ),
+        registeredAndGenerated: generatedUsersCount,
+      };
+    }, [generatedUsersCount, hasLoadedOverviewUsers, overview]);
+
+  const cachedUserLifecycle =
+    cachedStatistics?.userLifecycle ?? EMPTY_USER_LIFECYCLE;
+  const userLifecycleSnapshot =
+    liveUserLifecycleSnapshot ?? cachedUserLifecycle;
+  const usingCachedLifecycle = !liveUserLifecycleSnapshot;
 
   const userLifecycleStats = useMemo(
     () => [
       {
         label: "Started only",
-        value: Math.max((overview?.totalUsers ?? 0) - (overview?.registeredUsers ?? 0), 0),
+        value: userLifecycleSnapshot.startedOnly,
         colorClass: "bg-sky-400/90",
       },
       {
         label: "Registered, no generation",
-        value: Math.max((overview?.registeredUsers ?? 0) - generatedUsersCount, 0),
+        value: userLifecycleSnapshot.registeredNoGeneration,
         colorClass: "bg-amber-400/90",
       },
       {
         label: "Registered and generated",
-        value: generatedUsersCount,
+        value: userLifecycleSnapshot.registeredAndGenerated,
         colorClass: "bg-emerald-400/90",
       },
     ],
-    [generatedUsersCount, overview?.registeredUsers, overview?.totalUsers]
+    [userLifecycleSnapshot],
   );
 
   const userLifecycleTotal = useMemo(
     () => userLifecycleStats.reduce((sum, item) => sum + item.value, 0),
-    [userLifecycleStats]
+    [userLifecycleStats],
   );
+
+  const cachedUserLifecycleTotal = useMemo(
+    () =>
+      cachedUserLifecycle.startedOnly +
+      cachedUserLifecycle.registeredNoGeneration +
+      cachedUserLifecycle.registeredAndGenerated,
+    [cachedUserLifecycle],
+  );
+
+  const cachedLifecycleValueByLabel = useMemo(
+    () => ({
+      "Started only": cachedUserLifecycle.startedOnly,
+      "Registered, no generation": cachedUserLifecycle.registeredNoGeneration,
+      "Registered and generated": cachedUserLifecycle.registeredAndGenerated,
+    }),
+    [cachedUserLifecycle],
+  );
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    if (!liveJobCompositionStats && !liveUserLifecycleSnapshot) {
+      return;
+    }
+
+    const next: CachedStatistics = {
+      jobComposition:
+        liveJobCompositionStats ??
+        cachedStatistics?.jobComposition ??
+        EMPTY_JOB_COMPOSITION,
+      userLifecycle:
+        liveUserLifecycleSnapshot ??
+        cachedStatistics?.userLifecycle ??
+        EMPTY_USER_LIFECYCLE,
+    };
+
+    window.localStorage.setItem(STATS_CACHE_STORAGE_KEY, JSON.stringify(next));
+  }, [
+    cachedStatistics,
+    isHydrated,
+    liveJobCompositionStats,
+    liveUserLifecycleSnapshot,
+  ]);
 
   const activeSection = useMemo<SectionKey>(() => {
     if (pathname.startsWith("/users")) {
@@ -450,12 +697,14 @@ export default function Home() {
       users: {
         eyebrow: "User Intelligence",
         title: "User Directory",
-        description: "Search and audit user activity through the documented admin user endpoint.",
+        description:
+          "Search and audit user activity through the documented admin user endpoint.",
       },
       presentations: {
         eyebrow: "Moderation",
         title: "Presentation Stream",
-        description: "Review generated presentations and force-fail pending items when needed.",
+        description:
+          "Review generated presentations and force-fail pending items when needed.",
       },
       broadcast: {
         eyebrow: "Messaging",
@@ -465,10 +714,11 @@ export default function Home() {
       admins: {
         eyebrow: "Access Control",
         title: "Admin Management",
-        description: "Review admin roster and create new admin accounts based on role permissions.",
+        description:
+          "Review admin roster and create new admin accounts based on role permissions.",
       },
     }),
-    []
+    [],
   );
 
   const navItems = useMemo(
@@ -477,34 +727,29 @@ export default function Home() {
         key: "overview" as const,
         label: "Overview",
         href: "/",
-        stat: overview?.pendingJobs ?? 0,
       },
       {
         key: "users" as const,
         label: "Users",
         href: "/users",
-        stat: users.length,
       },
       {
         key: "presentations" as const,
         label: "Presentations",
         href: "/presentations",
-        stat: presentations.length,
       },
       {
         key: "broadcast" as const,
         label: "Broadcast",
         href: "/broadcast",
-        stat: broadcastResult?.sent ?? 0,
       },
       {
         key: "admins" as const,
         label: "Admins",
         href: "/admins",
-        stat: admins.length,
       },
     ],
-    [admins.length, broadcastResult?.sent, overview?.pendingJobs, presentations.length, users.length]
+    [],
   );
 
   const statusPillClass = (status: PresentationStatus) => {
@@ -535,7 +780,7 @@ export default function Home() {
             refreshToken: session.refreshToken,
           }),
         },
-        false
+        false,
       );
 
       setSession(payload);
@@ -556,10 +801,9 @@ export default function Home() {
           {
             method: "POST",
           },
-          true
+          true,
         );
-      } catch {
-      }
+      } catch {}
     }
 
     setSession(null);
@@ -567,8 +811,12 @@ export default function Home() {
     setOverview(null);
     setUsers([]);
     setOverviewUsers([]);
+    setHasLoadedOverviewUsers(false);
     setPresentations([]);
     setAdmins([]);
+    setRuntimeSettings(null);
+    setMainThemePromptCharacterLimitInput("");
+    setIsSavingRuntimeSettings(false);
     setAdminsError(null);
     setGlobalInfo("Session cleared.");
     router.replace("/login");
@@ -578,7 +826,7 @@ export default function Home() {
     try {
       const result = await apiRequest<{ updated: boolean }>(
         `/admin/presentations/${id}/fail`,
-        { method: "POST" }
+        { method: "POST" },
       );
 
       if (result.updated) {
@@ -604,7 +852,7 @@ export default function Home() {
           method: "POST",
           body: JSON.stringify({ message: broadcastMessage }),
         },
-        true
+        true,
       );
 
       setBroadcastResult(result);
@@ -612,6 +860,54 @@ export default function Home() {
       setGlobalInfo("Broadcast queued successfully.");
     } catch (error) {
       setGlobalError(toErrorMessage(error));
+    }
+  };
+
+  const handleSaveRuntimeSettings = async (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+
+    const parsedLimit = Number(mainThemePromptCharacterLimitInput.trim());
+
+    if (!Number.isInteger(parsedLimit)) {
+      setGlobalError("Main theme prompt limit must be an integer.");
+      return;
+    }
+
+    if (
+      parsedLimit < MAIN_THEME_PROMPT_LIMIT_MIN ||
+      parsedLimit > MAIN_THEME_PROMPT_LIMIT_MAX
+    ) {
+      setGlobalError(
+        `Main theme prompt limit must be between ${MAIN_THEME_PROMPT_LIMIT_MIN} and ${MAIN_THEME_PROMPT_LIMIT_MAX}.`,
+      );
+      return;
+    }
+
+    setIsSavingRuntimeSettings(true);
+    setGlobalError(null);
+
+    try {
+      const updated = await apiRequest<RuntimeSettingsResponse>(
+        "/admin/settings",
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            mainThemePromptCharacterLimit: parsedLimit,
+          }),
+        },
+      );
+
+      setRuntimeSettings(updated);
+      setMainThemePromptCharacterLimitInput(
+        `${updated.mainThemePromptCharacterLimit}`,
+      );
+      setGlobalInfo("Main theme prompt limit updated.");
+    } catch (error) {
+      setGlobalError(toErrorMessage(error));
+    } finally {
+      setIsSavingRuntimeSettings(false);
     }
   };
 
@@ -630,7 +926,7 @@ export default function Home() {
             role: adminRole,
           }),
         },
-        true
+        true,
       );
 
       setAdminName("");
@@ -663,11 +959,20 @@ export default function Home() {
                 <ShineBorder
                   borderWidth={1}
                   duration={9}
-                  shineColor={["rgba(14,165,233,0.75)", "rgba(249,115,22,0.55)"]}
+                  shineColor={[
+                    "rgba(14,165,233,0.75)",
+                    "rgba(249,115,22,0.55)",
+                  ]}
                 />
-                <p className="text-[0.67rem] font-semibold tracking-[0.2em] uppercase text-muted">MagicUI Console</p>
-                <h1 className="mt-2 text-xl font-semibold tracking-tight text-main">Axiom Admin</h1>
-                <p className="mt-2 text-xs text-muted">Operating on the documented endpoints with real-time controls.</p>
+                <p className="text-[0.67rem] font-semibold tracking-[0.2em] uppercase text-muted">
+                  MagicUI Console
+                </p>
+                <h1 className="mt-2 text-xl font-semibold tracking-tight text-main">
+                  Axiom Admin
+                </h1>
+                <p className="mt-2 text-xs text-muted">
+                  Operating on the documented endpoints with real-time controls.
+                </p>
               </div>
 
               <div className="mt-5 rounded-2xl surface-muted p-3">
@@ -675,7 +980,9 @@ export default function Home() {
                   type="button"
                   className="flex w-full items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] px-3 py-2 text-sm font-medium text-main transition hover:border-[var(--accent)]"
                   onClick={() => {
-                    setTheme((current) => (current === "light" ? "dark" : "light"));
+                    setTheme((current) =>
+                      current === "light" ? "dark" : "light",
+                    );
                   }}
                 >
                   <span>Theme</span>
@@ -683,7 +990,7 @@ export default function Home() {
                     <span
                       className={cn(
                         "absolute h-4 w-4 rounded-full bg-[var(--accent)] transition-transform",
-                        theme === "dark" ? "translate-x-5" : "translate-x-0"
+                        theme === "dark" ? "translate-x-5" : "translate-x-0",
                       )}
                     />
                   </span>
@@ -696,25 +1003,16 @@ export default function Home() {
                     key={item.href}
                     href={item.href}
                     className={cn(
-                      "flex w-full items-center justify-between rounded-xl border px-3 py-2 text-sm transition",
+                      "flex w-full items-center rounded-xl border px-3 py-2 text-sm transition",
                       activeSection === item.key
                         ? "border-[var(--accent)] bg-[var(--accent-soft)] text-main"
-                        : "border-[var(--surface-border)] bg-[var(--surface-2)] text-main hover:border-[var(--accent)]"
+                        : "border-[var(--surface-border)] bg-[var(--surface-2)] text-main hover:border-[var(--accent)]",
                     )}
                   >
                     <span>{item.label}</span>
-                    <span className="rounded-md border border-[var(--surface-border)] bg-[var(--surface-3)] px-1.5 py-0.5 text-xs">
-                      {item.stat}
-                    </span>
                   </Link>
                 ))}
               </nav>
-
-              <div className="mt-auto rounded-2xl surface-muted p-3">
-                <p className="text-[0.65rem] tracking-[0.18em] uppercase text-muted">Target API</p>
-                <p className="mt-2 break-all text-xs text-main">{API_BASE_URL}</p>
-                <p className="mt-2 text-xs text-muted">Requests proxy through `{API_PROXY_PREFIX}` for local same-origin access.</p>
-              </div>
             </aside>
 
             <main className="space-y-6">
@@ -732,7 +1030,9 @@ export default function Home() {
                     <h2 className="mt-1 text-2xl font-semibold tracking-tight text-main md:text-3xl">
                       {sectionCopy[activeSection].title}
                     </h2>
-                    <p className="mt-2 max-w-2xl text-sm text-muted">{sectionCopy[activeSection].description}</p>
+                    <p className="mt-2 max-w-2xl text-sm text-muted">
+                      {sectionCopy[activeSection].description}
+                    </p>
                   </div>
 
                   <div className="flex flex-wrap gap-2">
@@ -773,23 +1073,35 @@ export default function Home() {
 
                 {profile ? (
                   <p className="mt-4 text-xs text-muted">
-                    Signed in as <span className="font-semibold text-main">{profile.name}</span> ({profile.role}) - @{profile.username}
+                    Signed in as{" "}
+                    <span className="font-semibold text-main">
+                      {profile.name}
+                    </span>{" "}
+                    ({profile.role}) - @{profile.username}
                   </p>
                 ) : null}
               </header>
 
               {globalError ? (
-                <div className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700">{globalError}</div>
+                <div className="rounded-2xl border border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+                  {globalError}
+                </div>
               ) : null}
 
               {globalInfo ? (
-                <div className="rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{globalInfo}</div>
+                <div className="rounded-2xl border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  {globalInfo}
+                </div>
               ) : null}
 
               {!session ? (
                 <section className="surface-glass rounded-3xl p-5 md:p-6">
-                  <h3 className="text-xl font-semibold text-main">Redirecting to login</h3>
-                  <p className="mt-2 text-sm text-muted">Authentication now lives on a dedicated `/login` page.</p>
+                  <h3 className="text-xl font-semibold text-main">
+                    Redirecting to login
+                  </h3>
+                  <p className="mt-2 text-sm text-muted">
+                    Authentication now lives on a dedicated `/login` page.
+                  </p>
                 </section>
               ) : (
                 <>
@@ -813,8 +1125,15 @@ export default function Home() {
                                   className="flex items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2"
                                 >
                                   <div>
-                                    <p className="text-sm font-medium text-main">#{item.id} {item.metadata?.prompt ?? "Untitled prompt"}</p>
-                                    <p className="text-xs text-muted">{item.firstName} - {formatDate(item.createdAt)}</p>
+                                    <p className="text-sm font-medium text-main">
+                                      #{item.id}{" "}
+                                      {item.metadata?.prompt ??
+                                        "Untitled prompt"}
+                                    </p>
+                                    <p className="text-xs text-muted">
+                                      {item.firstName} -{" "}
+                                      {formatDate(item.createdAt)}
+                                    </p>
                                   </div>
                                   <button
                                     type="button"
@@ -840,45 +1159,104 @@ export default function Home() {
                           <div className="space-y-3">
                             <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3 transition-colors duration-300 hover:border-[var(--accent)]">
                               <div className="flex items-center justify-between gap-2">
-                                <p className="text-xs text-muted">Job composition</p>
+                                <p className="text-xs text-muted">
+                                  Job composition
+                                </p>
                                 <p className="text-sm font-semibold text-main">
-                                  {formatNumber(overview?.statistics.totalJobs ?? 0)} total
+                                  <NumberTicker
+                                    value={jobCompositionStats.totalJobs}
+                                    startValue={
+                                      usingCachedJobComposition
+                                        ? 0
+                                        : cachedJobComposition.totalJobs
+                                    }
+                                  />{" "}
+                                  total
                                 </p>
                               </div>
 
                               <div className="mt-3 flex h-3 overflow-hidden rounded-full border border-[var(--surface-border)] bg-[var(--surface-3)]">
                                 <div
-                                  className="h-full bg-emerald-400/90"
+                                  className="h-full bg-emerald-400/90 transition-[width] duration-700 ease-out"
                                   style={{
-                                    width: `${clampNumber(overview?.statistics.completionRate ?? 0, 0, 100)}%`,
+                                    width: `${jobCompositionStats.completionRate}%`,
                                   }}
                                 />
                                 <div
-                                  className="h-full bg-amber-400/90"
+                                  className="h-full bg-amber-400/90 transition-[width] duration-700 ease-out"
                                   style={{
-                                    width: `${clampNumber(overview?.statistics.pendingRate ?? 0, 0, 100)}%`,
+                                    width: `${jobCompositionStats.pendingRate}%`,
                                   }}
                                 />
                                 <div
-                                  className="h-full bg-rose-400/90"
+                                  className="h-full bg-rose-400/90 transition-[width] duration-700 ease-out"
                                   style={{
-                                    width: `${clampNumber(overview?.statistics.failureRate ?? 0, 0, 100)}%`,
+                                    width: `${jobCompositionStats.failureRate}%`,
                                   }}
                                 />
                               </div>
 
                               <div className="mt-2 grid grid-cols-3 gap-2 text-[0.7rem] text-muted">
-                                <p>Completed: {formatPercent(overview?.statistics.completionRate ?? 0)}</p>
-                                <p>Pending: {formatPercent(overview?.statistics.pendingRate ?? 0)}</p>
-                                <p>Failed: {formatPercent(overview?.statistics.failureRate ?? 0)}</p>
+                                <p className="flex items-center gap-1.5">
+                                  <span className="inline-block size-2 rounded-full bg-emerald-400/90" />
+                                  Completed:{" "}
+                                  <NumberTicker
+                                    value={jobCompositionStats.completionRate}
+                                    startValue={
+                                      usingCachedJobComposition
+                                        ? 0
+                                        : cachedJobComposition.completionRate
+                                    }
+                                    decimalPlaces={1}
+                                  />
+                                  %
+                                </p>
+                                <p className="flex items-center gap-1.5">
+                                  <span className="inline-block size-2 rounded-full bg-amber-400/90" />
+                                  Pending:{" "}
+                                  <NumberTicker
+                                    value={jobCompositionStats.pendingRate}
+                                    startValue={
+                                      usingCachedJobComposition
+                                        ? 0
+                                        : cachedJobComposition.pendingRate
+                                    }
+                                    decimalPlaces={1}
+                                  />
+                                  %
+                                </p>
+                                <p className="flex items-center gap-1.5">
+                                  <span className="inline-block size-2 rounded-full bg-rose-400/90" />
+                                  Failed:{" "}
+                                  <NumberTicker
+                                    value={jobCompositionStats.failureRate}
+                                    startValue={
+                                      usingCachedJobComposition
+                                        ? 0
+                                        : cachedJobComposition.failureRate
+                                    }
+                                    decimalPlaces={1}
+                                  />
+                                  %
+                                </p>
                               </div>
                             </div>
 
                             <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3 transition-colors duration-300 hover:border-[var(--accent)]">
                               <div className="flex items-center justify-between gap-2">
-                                <p className="text-xs text-muted">User lifecycle</p>
+                                <p className="text-xs text-muted">
+                                  User lifecycle
+                                </p>
                                 <p className="text-sm font-semibold text-main">
-                                  {formatNumber(userLifecycleTotal)} users
+                                  <NumberTicker
+                                    value={userLifecycleTotal}
+                                    startValue={
+                                      usingCachedLifecycle
+                                        ? 0
+                                        : cachedUserLifecycleTotal
+                                    }
+                                  />{" "}
+                                  users
                                 </p>
                               </div>
 
@@ -886,7 +1264,10 @@ export default function Home() {
                                 {userLifecycleStats.map((item) => (
                                   <div
                                     key={item.label}
-                                    className={cn("h-full transition-all duration-700", item.colorClass)}
+                                    className={cn(
+                                      "h-full transition-all duration-700",
+                                      item.colorClass,
+                                    )}
                                     style={{
                                       width: `${userLifecycleTotal > 0 ? (item.value / userLifecycleTotal) * 100 : 0}%`,
                                     }}
@@ -896,18 +1277,115 @@ export default function Home() {
 
                               <div className="mt-2 grid gap-2 text-[0.72rem] text-muted sm:grid-cols-3">
                                 {userLifecycleStats.map((item) => (
-                                  <div key={item.label} className="flex items-center gap-2">
-                                    <span className={cn("inline-block size-2 rounded-full", item.colorClass)} />
+                                  <div
+                                    key={item.label}
+                                    className="flex items-center gap-2"
+                                  >
+                                    <span
+                                      className={cn(
+                                        "inline-block size-2 rounded-full",
+                                        item.colorClass,
+                                      )}
+                                    />
                                     <p>
-                                      {item.label}: {formatNumber(item.value)} ({formatPercent(
-                                        userLifecycleTotal > 0 ? (item.value / userLifecycleTotal) * 100 : 0
-                                      )})
+                                      {item.label}:{" "}
+                                      <NumberTicker
+                                        value={item.value}
+                                        startValue={
+                                          usingCachedLifecycle
+                                            ? 0
+                                            : (cachedLifecycleValueByLabel[
+                                                item.label as keyof typeof cachedLifecycleValueByLabel
+                                              ] ?? 0)
+                                        }
+                                      />{" "}
+                                      (
+                                      <NumberTicker
+                                        value={
+                                          userLifecycleTotal > 0
+                                            ? (item.value /
+                                                userLifecycleTotal) *
+                                              100
+                                            : 0
+                                        }
+                                        startValue={
+                                          usingCachedLifecycle
+                                            ? 0
+                                            : cachedUserLifecycleTotal > 0
+                                              ? ((cachedLifecycleValueByLabel[
+                                                  item.label as keyof typeof cachedLifecycleValueByLabel
+                                                ] ?? 0) /
+                                                  cachedUserLifecycleTotal) *
+                                                100
+                                              : 0
+                                        }
+                                        decimalPlaces={1}
+                                      />
+                                      %)
                                     </p>
                                   </div>
                                 ))}
                               </div>
                             </div>
                           </div>
+                        </BentoCard>
+
+                        <BentoCard
+                          title="Generation Settings"
+                          description="GET/PATCH /admin/settings"
+                          className="surface-glass order-3 md:col-span-2"
+                          as="div"
+                        >
+                          <form
+                            className="space-y-3"
+                            onSubmit={handleSaveRuntimeSettings}
+                          >
+                            <div>
+                              <p className="text-xs text-muted">
+                                Main theme prompt character limit
+                              </p>
+                              <p className="mt-1 text-sm text-main">
+                                Current: {" "}
+                                <span className="font-semibold">
+                                  {runtimeSettings?.mainThemePromptCharacterLimit ??
+                                    "-"}
+                                </span>
+                              </p>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              <input
+                                type="number"
+                                min={MAIN_THEME_PROMPT_LIMIT_MIN}
+                                max={MAIN_THEME_PROMPT_LIMIT_MAX}
+                                value={mainThemePromptCharacterLimitInput}
+                                onChange={(event) => {
+                                  setMainThemePromptCharacterLimitInput(
+                                    event.target.value,
+                                  );
+                                }}
+                                className="w-36 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none focus:border-[var(--accent)]"
+                                required
+                              />
+
+                              <button
+                                type="submit"
+                                disabled={
+                                  isSavingRuntimeSettings ||
+                                  !runtimeSettings ||
+                                  !mainThemePromptCharacterLimitInput.trim()
+                                }
+                                className="rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-sm font-semibold text-main disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {isSavingRuntimeSettings ? "Saving..." : "Save"}
+                              </button>
+                            </div>
+
+                            <p className="text-xs text-muted">
+                              Allowed range: {MAIN_THEME_PROMPT_LIMIT_MIN}-
+                              {MAIN_THEME_PROMPT_LIMIT_MAX} characters.
+                            </p>
+                          </form>
                         </BentoCard>
                       </BentoGrid>
                     ) : null}
@@ -917,8 +1395,12 @@ export default function Home() {
                         <article className="surface-glass rounded-3xl p-5">
                           <div className="flex flex-wrap items-end justify-between gap-3">
                             <div>
-                              <h3 className="text-lg font-semibold text-main">Users</h3>
-                              <p className="text-sm text-muted">GET /admin/users with search + limit</p>
+                              <h3 className="text-lg font-semibold text-main">
+                                Users
+                              </h3>
+                              <p className="text-sm text-muted">
+                                GET /admin/users with search + limit
+                              </p>
                             </div>
 
                             <div className="flex gap-2">
@@ -964,21 +1446,36 @@ export default function Home() {
                               </thead>
                               <tbody>
                                 {users.slice(0, 10).map((user) => (
-                                  <tr key={user.id} className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]">
+                                  <tr
+                                    key={user.id}
+                                    className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
+                                  >
                                     <td className="px-3 py-2 text-main">
-                                      <p className="font-medium">{user.firstName}</p>
-                                      <p className="text-xs text-muted">@{user.username ?? "no_username"}</p>
+                                      <p className="font-medium">
+                                        {user.firstName}
+                                      </p>
+                                      <p className="text-xs text-muted">
+                                        @{user.username ?? "no_username"}
+                                      </p>
                                     </td>
-                                    <td className="px-3 py-2 text-main">{user.telegramId}</td>
-                                    <td className="px-3 py-2 text-main">{user.totalGenerations}</td>
-                                    <td className="px-3 py-2 text-main">{formatDate(user.lastGenerationAt)}</td>
+                                    <td className="px-3 py-2 text-main">
+                                      {user.telegramId}
+                                    </td>
+                                    <td className="px-3 py-2 text-main">
+                                      {user.totalGenerations}
+                                    </td>
+                                    <td className="px-3 py-2 text-main">
+                                      {formatDate(user.lastGenerationAt)}
+                                    </td>
                                   </tr>
                                 ))}
                               </tbody>
                             </table>
 
                             {users.length === 0 ? (
-                              <p className="px-3 py-5 text-sm text-muted">No users found for this filter.</p>
+                              <p className="px-3 py-5 text-sm text-muted">
+                                No users found for this filter.
+                              </p>
                             ) : null}
                           </div>
                         </article>
@@ -990,15 +1487,23 @@ export default function Home() {
                         <article className="surface-glass rounded-3xl p-5">
                           <div className="flex flex-wrap items-end justify-between gap-3">
                             <div>
-                              <h3 className="text-lg font-semibold text-main">Presentations</h3>
-                              <p className="text-sm text-muted">GET /admin/presentations + POST /admin/presentations/:id/fail</p>
+                              <h3 className="text-lg font-semibold text-main">
+                                Presentations
+                              </h3>
+                              <p className="text-sm text-muted">
+                                GET /admin/presentations + POST
+                                /admin/presentations/:id/fail
+                              </p>
                             </div>
 
                             <div className="flex gap-2">
                               <select
                                 value={presentationStatus}
                                 onChange={(event) => {
-                                  setPresentationStatus(event.target.value as PresentationStatusFilter);
+                                  setPresentationStatus(
+                                    event.target
+                                      .value as PresentationStatusFilter,
+                                  );
                                 }}
                                 className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none focus:border-[var(--accent)]"
                               >
@@ -1014,7 +1519,9 @@ export default function Home() {
                                 max={200}
                                 value={presentationLimit}
                                 onChange={(event) => {
-                                  setPresentationLimit(Number(event.target.value));
+                                  setPresentationLimit(
+                                    Number(event.target.value),
+                                  );
                                 }}
                                 className="w-24 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none focus:border-[var(--accent)]"
                               />
@@ -1031,42 +1538,81 @@ export default function Home() {
                             </div>
                           </div>
 
-                          <div className="mt-4 space-y-2">
-                            {presentations.slice(0, 8).map((item) => (
-                              <div
-                                key={item.id}
-                                className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3"
-                              >
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <p className="text-sm font-semibold text-main">#{item.id} {item.metadata?.prompt ?? "Untitled prompt"}</p>
-                                  <span
-                                    className={cn(
-                                      "rounded-full border px-2 py-1 text-xs font-semibold",
-                                      statusPillClass(item.status)
-                                    )}
-                                  >
-                                    {item.status}
-                                  </span>
-                                </div>
-                                <p className="mt-1 text-xs text-muted">{item.firstName} ({item.username ?? "no_username"}) - {formatDate(item.createdAt)}</p>
-                                <p className="mt-1 text-xs text-muted">Lang: {item.metadata?.language ?? "-"} / Slides: {item.metadata?.pageCount ?? "-"}</p>
-
-                                {item.status === "pending" ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      void handleFailPresentation(item.id);
-                                    }}
-                                    className="mt-3 rounded-lg border border-rose-300 bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700"
-                                  >
-                                    Force fail
-                                  </button>
-                                ) : null}
-                              </div>
-                            ))}
+                          <div className="mt-4 overflow-hidden rounded-2xl border border-[var(--surface-border)]">
+                            <div className="overflow-x-auto">
+                              <table className="min-w-full text-sm">
+                                <thead className="bg-[var(--surface-2)] text-left text-[0.72rem] tracking-[0.12em] text-muted uppercase">
+                                  <tr>
+                                    <th className="px-3 py-2">ID</th>
+                                    <th className="px-3 py-2">Prompt</th>
+                                    <th className="px-3 py-2">User</th>
+                                    <th className="px-3 py-2">Status</th>
+                                    <th className="px-3 py-2">Lang</th>
+                                    <th className="px-3 py-2">Slides</th>
+                                    <th className="px-3 py-2">Created</th>
+                                    <th className="px-3 py-2">Action</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {presentations.map((item) => (
+                                    <tr
+                                      key={item.id}
+                                      className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
+                                    >
+                                      <td className="px-3 py-2 font-medium text-main">
+                                        #{item.id}
+                                      </td>
+                                      <td className="px-3 py-2 text-main">
+                                        {item.metadata?.prompt ?? "Untitled prompt"}
+                                      </td>
+                                      <td className="px-3 py-2 text-main">
+                                        <p>{item.firstName}</p>
+                                        <p className="text-xs text-muted">
+                                          @{item.username ?? "no_username"}
+                                        </p>
+                                      </td>
+                                      <td className="px-3 py-2">
+                                        <span
+                                          className={cn(
+                                            "rounded-full border px-2 py-1 text-xs font-semibold",
+                                            statusPillClass(item.status),
+                                          )}
+                                        >
+                                          {item.status}
+                                        </span>
+                                      </td>
+                                      <td className="px-3 py-2 text-main">
+                                        {item.metadata?.language ?? "-"}
+                                      </td>
+                                      <td className="px-3 py-2 text-main">
+                                        {item.metadata?.pageCount ?? "-"}
+                                      </td>
+                                      <td className="px-3 py-2 text-main">
+                                        {formatDate(item.createdAt)}
+                                      </td>
+                                      <td className="px-3 py-2 text-main">
+                                        {item.status === "pending" ? (
+                                          <button
+                                            type="button"
+                                            onClick={() => {
+                                              void handleFailPresentation(item.id);
+                                            }}
+                                            className="rounded-lg border border-rose-300 bg-rose-100 px-2 py-1 text-xs font-semibold text-rose-700"
+                                          >
+                                            Force fail
+                                          </button>
+                                        ) : (
+                                          <span className="text-xs text-muted">-</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
 
                             {presentations.length === 0 ? (
-                              <p className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-4 text-sm text-muted">
+                              <p className="px-3 py-5 text-sm text-muted">
                                 No presentations found for selected filter.
                               </p>
                             ) : null}
@@ -1078,10 +1624,18 @@ export default function Home() {
                     {activeSection === "broadcast" ? (
                       <section>
                         <article className="surface-glass rounded-3xl p-5">
-                          <h3 className="text-lg font-semibold text-main">Broadcast</h3>
-                          <p className="text-sm text-muted">POST /admin/broadcast to all users with phone numbers</p>
+                          <h3 className="text-lg font-semibold text-main">
+                            Broadcast
+                          </h3>
+                          <p className="text-sm text-muted">
+                            POST /admin/broadcast to all users with phone
+                            numbers
+                          </p>
 
-                          <form className="mt-4 space-y-3" onSubmit={handleBroadcast}>
+                          <form
+                            className="mt-4 space-y-3"
+                            onSubmit={handleBroadcast}
+                          >
                             <textarea
                               value={broadcastMessage}
                               onChange={(event) => {
@@ -1095,7 +1649,9 @@ export default function Home() {
                             />
 
                             <div className="flex flex-wrap items-center justify-between gap-2">
-                              <p className="text-xs text-muted">{broadcastMessage.length}/4096</p>
+                              <p className="text-xs text-muted">
+                                {broadcastMessage.length}/4096
+                              </p>
                               <button
                                 type="submit"
                                 className="rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-sm font-semibold text-main"
@@ -1107,7 +1663,18 @@ export default function Home() {
 
                           {broadcastResult ? (
                             <div className="mt-4 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3 text-sm text-main">
-                              Recipients: <span className="font-semibold">{broadcastResult.recipients}</span>, sent: <span className="font-semibold">{broadcastResult.sent}</span>, failed: <span className="font-semibold">{broadcastResult.failed}</span>
+                              Recipients:{" "}
+                              <span className="font-semibold">
+                                {broadcastResult.recipients}
+                              </span>
+                              , sent:{" "}
+                              <span className="font-semibold">
+                                {broadcastResult.sent}
+                              </span>
+                              , failed:{" "}
+                              <span className="font-semibold">
+                                {broadcastResult.failed}
+                              </span>
                             </div>
                           ) : null}
                         </article>
@@ -1117,8 +1684,13 @@ export default function Home() {
                     {activeSection === "admins" ? (
                       <section>
                         <article className="surface-glass rounded-3xl p-5">
-                          <h3 className="text-lg font-semibold text-main">Admins</h3>
-                          <p className="text-sm text-muted">GET /admin/admins, POST /admin/admins (SUPERADMIN only)</p>
+                          <h3 className="text-lg font-semibold text-main">
+                            Admins
+                          </h3>
+                          <p className="text-sm text-muted">
+                            GET /admin/admins, POST /admin/admins (SUPERADMIN
+                            only)
+                          </p>
 
                           {adminsError ? (
                             <div className="mt-4 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -1132,8 +1704,12 @@ export default function Home() {
                                   className="flex items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2"
                                 >
                                   <div>
-                                    <p className="text-sm font-medium text-main">{admin.name}</p>
-                                    <p className="text-xs text-muted">@{admin.username}</p>
+                                    <p className="text-sm font-medium text-main">
+                                      {admin.name}
+                                    </p>
+                                    <p className="text-xs text-muted">
+                                      @{admin.username}
+                                    </p>
                                   </div>
                                   <span className="rounded-full border border-[var(--surface-border)] bg-[var(--surface-3)] px-2 py-1 text-xs font-semibold text-main">
                                     {admin.role}
@@ -1144,7 +1720,10 @@ export default function Home() {
                           )}
 
                           {profile?.role === "SUPERADMIN" ? (
-                            <form className="mt-4 grid gap-2 sm:grid-cols-2" onSubmit={handleCreateAdmin}>
+                            <form
+                              className="mt-4 grid gap-2 sm:grid-cols-2"
+                              onSubmit={handleCreateAdmin}
+                            >
                               <input
                                 value={adminName}
                                 onChange={(event) => {
@@ -1195,7 +1774,10 @@ export default function Home() {
                               </button>
                             </form>
                           ) : (
-                            <p className="mt-4 text-sm text-muted">Create/update/delete admin actions require SUPERADMIN role.</p>
+                            <p className="mt-4 text-sm text-muted">
+                              Create/update/delete admin actions require
+                              SUPERADMIN role.
+                            </p>
                           )}
                         </article>
                       </section>
