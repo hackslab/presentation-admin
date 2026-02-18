@@ -1,129 +1,26 @@
 @import "tailwindcss";
-@plugin "tailwindcss-animate";
-@plugin "tailwindcss-react-aria-components";
-
-@theme inline {
-  --font-sans: var(--font-manrope);
-  --font-mono: var(--font-ibm-plex-mono);
-}
 
 :root {
-  --login-page-bg: radial-gradient(900px 380px at 80% -10%, rgba(197, 223, 245, 0.6) 0%, transparent 65%),
-    radial-gradient(760px 360px at 0% 110%, rgba(255, 255, 255, 0.72) 0%, transparent 60%),
-    linear-gradient(160deg, #d9e5f1 0%, #c5d3e3 100%);
-  --login-panel-border: #dbe5ec;
-  --login-panel-bg: linear-gradient(160deg, rgba(255, 255, 255, 0.95) 0%, rgba(247, 251, 254, 0.95) 100%);
-  --login-eyebrow: #4f6a81;
-  --login-title: #10202f;
-  --login-copy: #5d7386;
-  --login-input-bg: #ffffff;
-  --login-input-ring: #d4dee6;
-  --login-input-focus: #4f84ac;
-  --login-input-text: #173248;
-  --login-input-label: #2b495f;
-  --login-error-border: #f4c5c5;
-  --login-error-bg: #fff2f2;
-  --login-error-text: #9a2c2c;
-  --login-submit-bg: #173d59;
-  --login-submit-bg-hover: #204e72;
-  --login-submit-text: #ffffff;
+  --background: #ffffff;
+  --foreground: #171717;
 }
 
-@utility transition-inherit-all {
-  transition-property: inherit;
-  transition-duration: inherit;
-  transition-timing-function: inherit;
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
 }
 
-* {
-  box-sizing: border-box;
-}
-
-html,
-body {
-  min-height: 100%;
-  margin: 0;
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
 }
 
 body {
-  font-family: var(--font-manrope), "Segoe UI", sans-serif;
-  color: #112638;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  transition: color 240ms ease;
-}
-
-html[data-theme="dark"] body {
-  color: #dbe8f4;
-}
-
-html[data-theme="dark"] {
-  --login-page-bg: radial-gradient(900px 440px at 80% -10%, rgba(39, 70, 102, 0.52) 0%, transparent 65%),
-    radial-gradient(760px 380px at 0% 110%, rgba(16, 33, 49, 0.6) 0%, transparent 60%),
-    linear-gradient(160deg, #0c1c2e 0%, #10263b 100%);
-  --login-panel-border: #2e4559;
-  --login-panel-bg: linear-gradient(160deg, rgba(17, 33, 49, 0.94) 0%, rgba(10, 22, 35, 0.95) 100%);
-  --login-eyebrow: #98b1c6;
-  --login-title: #e3edf6;
-  --login-copy: #b0c4d5;
-  --login-input-bg: rgba(12, 28, 43, 0.88);
-  --login-input-ring: #3d576d;
-  --login-input-focus: #6ca4cf;
-  --login-input-text: #dfebf5;
-  --login-input-label: #a8bfd1;
-  --login-error-border: #7f3f46;
-  --login-error-bg: #3f1f24;
-  --login-error-text: #f9c4c4;
-  --login-submit-bg: #2f6690;
-  --login-submit-bg-hover: #3b79a8;
-  --login-submit-text: #f4f9ff;
-}
-
-.login-panel {
-  border-color: var(--login-panel-border) !important;
-  background-image: var(--login-panel-bg) !important;
-}
-
-.login-eyebrow {
-  color: var(--login-eyebrow) !important;
-}
-
-.login-title {
-  color: var(--login-title) !important;
-}
-
-.login-copy {
-  color: var(--login-copy) !important;
-}
-
-.login-input-wrapper {
-  background-color: var(--login-input-bg) !important;
-  --tw-ring-color: var(--login-input-ring) !important;
-}
-
-.login-input-wrapper:focus-within {
-  --tw-ring-color: var(--login-input-focus) !important;
-}
-
-.login-input-text {
-  color: var(--login-input-text) !important;
-}
-
-.login-input-field [data-label] {
-  color: var(--login-input-label) !important;
-}
-
-.login-error {
-  border-color: var(--login-error-border) !important;
-  background-color: var(--login-error-bg) !important;
-  color: var(--login-error-text) !important;
-}
-
-.login-submit-btn {
-  background-color: var(--login-submit-bg) !important;
-  color: var(--login-submit-text) !important;
-}
-
-.login-submit-btn:hover {
-  background-color: var(--login-submit-bg-hover) !important;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
 }
