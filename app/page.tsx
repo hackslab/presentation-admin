@@ -2169,7 +2169,18 @@ export default function Home() {
                                             {user.firstName}
                                           </p>
                                           <p className="text-xs text-muted">
-                                            @{user.username ?? "no_username"}
+                                            {user.username ? (
+                                              <a
+                                                href={`https://${user.username}.t.me`}
+                                                target="_blank"
+                                                rel="noreferrer"
+                                                className="underline decoration-transparent transition hover:decoration-current"
+                                              >
+                                                @{user.username}
+                                              </a>
+                                            ) : (
+                                              "@no_username"
+                                            )}
                                           </p>
                                         </td>
                                         <td className="px-3 py-2 text-main">
