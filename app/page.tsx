@@ -1287,24 +1287,86 @@ export default function Home() {
     }
   };
 
+  const clearBroadcastImage = () => {
+    if (broadcastImagePreviewUrl) {
+      URL.revokeObjectURL(broadcastImagePreviewUrl);
+    }
+
+    setBroadcastImagePreviewUrl(null);
+    setBroadcastImageFile(null);
+  };
+
+  const handleBroadcastImageChange = (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    const file = event.target.files?.[0] ?? null;
+
+    if (!file) {
+      clearBroadcastImage();
+      return;
+    }
+
+    if (!file.type.startsWith("image/")) {
+      toast.error("Please choose an image file.");
+      event.target.value = "";
+      return;
+    }
+
+    if (file.size > BROADCAST_IMAGE_MAX_BYTES) {
+      toast.error("Image must be 5 MB or smaller.");
+      event.target.value = "";
+      return;
+    }
+
+    clearBroadcastImage();
+    setBroadcastImageFile(file);
+    setBroadcastImagePreviewUrl(URL.createObjectURL(file));
+  };
+
   const handleBroadcast = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    const trimmedMessage = broadcastMessage.trim();
+
+    if (!trimmedMessage) {
+      toast.error("Message is required.");
+      return;
+    }
+
+    if (broadcastImageFile && trimmedMessage.length > 1024) {
+      toast.error("Message must be 1024 characters or less with an image.");
+      return;
+    }
+
+    setIsBroadcastSending(true);
+
     try {
+      const imageDataUrl = broadcastImageFile
+        ? await readFileAsDataUrl(broadcastImageFile)
+        : undefined;
+
       const result = await apiRequest<BroadcastResult>(
         "/admin/broadcast",
         {
           method: "POST",
-          body: JSON.stringify({ message: broadcastMessage }),
+          body: JSON.stringify({
+            message: trimmedMessage,
+            imageDataUrl,
+            imageFileName: broadcastImageFile?.name,
+          }),
         },
         true,
       );
 
       setBroadcastResult(result);
       setBroadcastMessage("");
+      clearBroadcastImage();
+      await fetchBroadcastHistory();
       toast.success("Broadcast queued successfully.");
     } catch (error) {
       toast.error(toErrorMessage(error));
+    } finally {
+      setIsBroadcastSending(false);
     }
   };
 
