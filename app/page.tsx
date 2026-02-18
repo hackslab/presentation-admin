@@ -2067,112 +2067,124 @@ export default function Home() {
                             only)
                           </p>
 
-                          <div className="mt-4 space-y-2">
-                            {showAdminsSkeleton ? (
-                              Array.from({ length: 3 }).map((_, index) => (
-                                <div
-                                  key={`admins-skeleton-${index}`}
-                                  className="flex items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2"
-                                >
-                                  <div>
-                                    <SkeletonBlock className="h-4 w-28" />
-                                    <SkeletonBlock className="mt-2 h-3 w-20" />
-                                  </div>
-                                  <SkeletonBlock className="h-6 w-20 rounded-full" />
-                                </div>
-                              ))
-                            ) : admins.length === 0 ? (
-                              <p className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-muted">
-                                No admins found.
+                          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                            <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                              <p className="text-xs font-semibold tracking-wide text-main uppercase">
+                                Admin list
                               </p>
-                            ) : (
-                              admins.map((admin) => (
-                                <div
-                                  key={admin.id}
-                                  className="flex items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2"
+                              <div className="mt-3 space-y-2">
+                                {showAdminsSkeleton ? (
+                                  Array.from({ length: 3 }).map((_, index) => (
+                                    <div
+                                      key={`admins-skeleton-${index}`}
+                                      className="flex items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2"
+                                    >
+                                      <div>
+                                        <SkeletonBlock className="h-4 w-28" />
+                                        <SkeletonBlock className="mt-2 h-3 w-20" />
+                                      </div>
+                                      <SkeletonBlock className="h-6 w-20 rounded-full" />
+                                    </div>
+                                  ))
+                                ) : admins.length === 0 ? (
+                                  <p className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-muted">
+                                    No admins found.
+                                  </p>
+                                ) : (
+                                  admins.map((admin) => (
+                                    <div
+                                      key={admin.id}
+                                      className="flex items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2"
+                                    >
+                                      <div>
+                                        <p className="text-sm font-medium text-main">
+                                          {admin.name}
+                                        </p>
+                                        <p className="text-xs text-muted">
+                                          @{admin.username}
+                                        </p>
+                                      </div>
+                                      <span className="rounded-full border border-[var(--surface-border)] bg-[var(--surface-3)] px-2 py-1 text-xs font-semibold text-main">
+                                        {admin.role}
+                                      </span>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+
+                            <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                              <p className="text-xs font-semibold tracking-wide text-main uppercase">
+                                Create admin
+                              </p>
+                              {profile?.role === "SUPERADMIN" ? (
+                                <form
+                                  className="mt-3 grid gap-2 sm:grid-cols-2"
+                                  onSubmit={handleCreateAdmin}
                                 >
-                                  <div>
-                                    <p className="text-sm font-medium text-main">
-                                      {admin.name}
-                                    </p>
-                                    <p className="text-xs text-muted">
-                                      @{admin.username}
-                                    </p>
-                                  </div>
-                                  <span className="rounded-full border border-[var(--surface-border)] bg-[var(--surface-3)] px-2 py-1 text-xs font-semibold text-main">
-                                    {admin.role}
-                                  </span>
-                                </div>
-                              ))
-                            )}
+                                  <input
+                                    value={adminName}
+                                    onChange={(event) => {
+                                      setAdminName(event.target.value);
+                                    }}
+                                    placeholder="Name"
+                                    className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+                                    required
+                                  />
+
+                                  <input
+                                    value={adminUsername}
+                                    onChange={(event) => {
+                                      setAdminUsername(event.target.value);
+                                    }}
+                                    placeholder="Username"
+                                    className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+                                    required
+                                  />
+
+                                  <input
+                                    value={adminPassword}
+                                    onChange={(event) => {
+                                      setAdminPassword(event.target.value);
+                                    }}
+                                    placeholder="Password"
+                                    type="password"
+                                    className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+                                    required
+                                  />
+
+                                  <select
+                                    value={adminRole}
+                                    onChange={(event) => {
+                                      setAdminRole(event.target.value as AdminRole);
+                                    }}
+                                    className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-main outline-none focus:border-[var(--accent)]"
+                                  >
+                                    <option value="ADMIN">ADMIN</option>
+                                    <option value="SUPERADMIN">SUPERADMIN</option>
+                                  </select>
+
+                                  <button
+                                    type="submit"
+                                    aria-label="Create admin"
+                                    title="Create admin"
+                                    className="sm:col-span-2 inline-flex items-center justify-center rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-main"
+                                  >
+                                    <UserPlus
+                                      className="size-4"
+                                      aria-hidden="true"
+                                    />
+                                    <span className="sr-only">Create admin</span>
+                                  </button>
+                                </form>
+                              ) : (
+                                <p className="mt-3 text-sm text-muted">
+                                  Create/update/delete admin actions require
+                                  SUPERADMIN role.
+                                </p>
+                              )}
+                            </div>
                           </div>
-
-                          {profile?.role === "SUPERADMIN" ? (
-                            <form
-                              className="mt-4 grid gap-2 sm:grid-cols-2"
-                              onSubmit={handleCreateAdmin}
-                            >
-                              <input
-                                value={adminName}
-                                onChange={(event) => {
-                                  setAdminName(event.target.value);
-                                }}
-                                placeholder="Name"
-                                className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
-                                required
-                              />
-
-                              <input
-                                value={adminUsername}
-                                onChange={(event) => {
-                                  setAdminUsername(event.target.value);
-                                }}
-                                placeholder="Username"
-                                className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
-                                required
-                              />
-
-                              <input
-                                value={adminPassword}
-                                onChange={(event) => {
-                                  setAdminPassword(event.target.value);
-                                }}
-                                placeholder="Password"
-                                type="password"
-                                className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
-                                required
-                              />
-
-                              <select
-                                value={adminRole}
-                                onChange={(event) => {
-                                  setAdminRole(event.target.value as AdminRole);
-                                }}
-                                className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none focus:border-[var(--accent)]"
-                              >
-                                <option value="ADMIN">ADMIN</option>
-                                <option value="SUPERADMIN">SUPERADMIN</option>
-                              </select>
-
-                              <button
-                                type="submit"
-                                aria-label="Create admin"
-                                title="Create admin"
-                                className="sm:col-span-2 inline-flex items-center justify-center rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-main"
-                              >
-                                <UserPlus
-                                  className="size-4"
-                                  aria-hidden="true"
-                                />
-                                <span className="sr-only">Create admin</span>
-                              </button>
-                            </form>
-                          ) : (
-                            <p className="mt-4 text-sm text-muted">
-                              Create/update/delete admin actions require
-                              SUPERADMIN role.
-                            </p>
-                          )}
                         </article>
                       </section>
                     ) : null}
