@@ -2499,58 +2499,188 @@ export default function Home() {
                             Broadcast
                           </h3>
                           <p className="text-sm text-muted">
-                            POST /admin/broadcast to all users with phone
-                            numbers
+                            POST /admin/broadcast and GET /admin/broadcasts for
+                            delivery history
                           </p>
 
-                          <form
-                            className="mt-4 space-y-3"
-                            onSubmit={handleBroadcast}
-                          >
-                            <textarea
-                              value={broadcastMessage}
-                              onChange={(event) => {
-                                setBroadcastMessage(event.target.value);
-                              }}
-                              rows={4}
-                              maxLength={4096}
-                              placeholder="Hello everyone! New templates are now available."
-                              className="w-full resize-y rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
-                              required
-                            />
-
-                            <div className="flex flex-wrap items-center justify-between gap-2">
-                              <p className="text-xs text-muted">
-                                {broadcastMessage.length}/4096
+                          <div className="mt-4 grid gap-4 xl:grid-cols-2">
+                            <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-4">
+                              <p className="text-xs font-semibold tracking-wide text-main uppercase">
+                                Broadcast field
                               </p>
-                              <button
-                                type="submit"
-                                aria-label="Send broadcast"
-                                title="Send broadcast"
-                                className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] text-main"
-                              >
-                                <Send className="size-4" aria-hidden="true" />
-                                <span className="sr-only">Send broadcast</span>
-                              </button>
-                            </div>
-                          </form>
 
-                          {broadcastResult ? (
-                            <div className="mt-4 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3 text-sm text-main">
-                              Recipients:{" "}
-                              <span className="font-semibold">
-                                {broadcastResult.recipients}
-                              </span>
-                              , sent:{" "}
-                              <span className="font-semibold">
-                                {broadcastResult.sent}
-                              </span>
-                              , failed:{" "}
-                              <span className="font-semibold">
-                                {broadcastResult.failed}
-                              </span>
+                              <form
+                                className="mt-3 space-y-3"
+                                onSubmit={handleBroadcast}
+                              >
+                                <textarea
+                                  value={broadcastMessage}
+                                  onChange={(event) => {
+                                    setBroadcastMessage(event.target.value);
+                                  }}
+                                  rows={5}
+                                  maxLength={broadcastImageFile ? 1024 : 4096}
+                                  placeholder="Hello everyone! New templates are now available."
+                                  className="w-full resize-y rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+                                  required
+                                />
+
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="text-xs text-muted">
+                                    {broadcastMessage.length}/
+                                    {broadcastImageFile ? 1024 : 4096}
+                                  </p>
+
+                                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-xs font-medium text-main">
+                                    Attach image
+                                    <input
+                                      type="file"
+                                      accept="image/png,image/jpeg,image/webp,image/gif"
+                                      className="sr-only"
+                                      onChange={handleBroadcastImageChange}
+                                    />
+                                  </label>
+                                </div>
+
+                                {broadcastImageFile && broadcastImagePreviewUrl ? (
+                                  <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] p-3">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div>
+                                        <p className="text-sm font-medium text-main">
+                                          {broadcastImageFile.name}
+                                        </p>
+                                        <p className="text-xs text-muted">
+                                          {(broadcastImageFile.size / 1024).toFixed(
+                                            1,
+                                          )}{" "}
+                                          KB
+                                        </p>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={clearBroadcastImage}
+                                        className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] px-2 py-1 text-xs text-main"
+                                      >
+                                        Remove
+                                      </button>
+                                    </div>
+                                    <img
+                                      src={broadcastImagePreviewUrl}
+                                      alt="Broadcast attachment preview"
+                                      className="mt-3 max-h-52 w-full rounded-xl border border-[var(--surface-border)] object-cover"
+                                    />
+                                  </div>
+                                ) : null}
+
+                                <div className="flex justify-end">
+                                  <button
+                                    type="submit"
+                                    aria-label="Send broadcast"
+                                    title="Send broadcast"
+                                    disabled={isBroadcastSending}
+                                    className="inline-flex h-9 items-center justify-center gap-2 rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 text-main disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {isBroadcastSending ? (
+                                      <Loader2
+                                        className="size-4 animate-spin"
+                                        aria-hidden="true"
+                                      />
+                                    ) : (
+                                      <Send
+                                        className="size-4"
+                                        aria-hidden="true"
+                                      />
+                                    )}
+                                    <span className="text-xs font-medium">
+                                      Send
+                                    </span>
+                                  </button>
+                                </div>
+                              </form>
+
+                              {broadcastResult ? (
+                                <div className="mt-4 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] p-3 text-sm text-main">
+                                  Recipients:{" "}
+                                  <span className="font-semibold">
+                                    {broadcastResult.recipients}
+                                  </span>
+                                  , sent:{" "}
+                                  <span className="font-semibold">
+                                    {broadcastResult.sent}
+                                  </span>
+                                  , failed:{" "}
+                                  <span className="font-semibold">
+                                    {broadcastResult.failed}
+                                  </span>
+                                </div>
+                              ) : null}
                             </div>
-                          ) : null}
+
+                            <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-4">
+                              <p className="text-xs font-semibold tracking-wide text-main uppercase">
+                                Broadcasted messages
+                              </p>
+
+                              <div className="mt-3 max-h-[30rem] space-y-3 overflow-y-auto pr-1">
+                                {isBroadcastHistoryLoading ? (
+                                  Array.from({ length: 3 }).map((_, index) => (
+                                    <div
+                                      key={`broadcast-history-skeleton-${index}`}
+                                      className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] p-3"
+                                    >
+                                      <SkeletonBlock className="h-3 w-28" />
+                                      <SkeletonBlock className="mt-2 h-4 w-full" />
+                                      <SkeletonBlock className="mt-3 h-20 w-full rounded-xl" />
+                                    </div>
+                                  ))
+                                ) : broadcastHistory.length === 0 ? (
+                                  <p className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-4 text-sm text-muted">
+                                    No broadcast messages yet.
+                                  </p>
+                                ) : (
+                                  broadcastHistory.map((item) => (
+                                    <article
+                                      key={item.id}
+                                      className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] p-3"
+                                    >
+                                      <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <p className="text-xs text-muted">
+                                          {formatDate(item.createdAt)}
+                                        </p>
+                                        <p className="text-xs text-muted">
+                                          by{" "}
+                                          {item.adminUsername
+                                            ? `@${item.adminUsername}`
+                                            : item.adminName ?? "Unknown admin"}
+                                        </p>
+                                      </div>
+
+                                      <p className="mt-2 text-sm text-main whitespace-pre-wrap">
+                                        {item.message}
+                                      </p>
+
+                                      {item.imageDataUrl ? (
+                                        <img
+                                          src={item.imageDataUrl}
+                                          alt={
+                                            item.imageFileName
+                                              ? `Attachment ${item.imageFileName}`
+                                              : "Broadcast attachment"
+                                          }
+                                          className="mt-3 max-h-56 w-full rounded-xl border border-[var(--surface-border)] object-cover"
+                                        />
+                                      ) : null}
+
+                                      <p className="mt-3 text-xs text-muted">
+                                        Recipients: {item.recipients}, sent: {" "}
+                                        {item.sent}, failed: {item.failed}
+                                      </p>
+                                    </article>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          </div>
                         </article>
                       </section>
                     ) : null}
