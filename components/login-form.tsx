@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/base/buttons/button";
 import { Input } from "@/components/base/input/input";
+import ThemeToggle from "@/components/theme-toggle";
 
 type LoginResponse = {
   message?: string;
@@ -62,51 +63,25 @@ export default function LoginForm() {
   };
 
   return (
-    <div className="relative min-h-screen overflow-hidden px-4 py-6 sm:px-6 sm:py-8">
+    <div className="login-shell relative flex min-h-screen items-center justify-center overflow-hidden px-4 py-6 sm:px-6 sm:py-8">
       <div
-        className="pointer-events-none absolute inset-0 -z-10"
+        className="login-backdrop pointer-events-none absolute inset-0 -z-10"
         style={{
-          background:
-            "radial-gradient(900px 380px at 80% -10%, rgba(197, 223, 245, 0.6) 0%, transparent 65%), radial-gradient(760px 360px at 0% 110%, rgba(255, 255, 255, 0.72) 0%, transparent 60%), linear-gradient(160deg, #d9e5f1 0%, #c5d3e3 100%)",
+          background: "var(--login-page-bg)",
         }}
       />
 
-      <div className="mx-auto grid w-full max-w-6xl gap-6 lg:grid-cols-[minmax(0,1.1fr)_460px]">
-        <section className={`${panelClass} hidden p-8 lg:block`}>
-          <p className="text-xs font-mono uppercase tracking-[0.22em] text-[#4f6a81]">
-            Telegram Operations
-          </p>
-          <h1 className="mt-3 text-4xl font-semibold text-[#10202f]">
-            Control Room Access
-          </h1>
-          <p className="mt-3 max-w-xl text-base text-[#586f82]">
-            This panel controls user insights, presentation queue actions, and
-            outbound broadcasts. Access is restricted to authorized operators.
-          </p>
-
-          <div className="mt-8 grid gap-3 sm:grid-cols-2">
-            {[
-              "Real-time queue monitoring",
-              "Secure broadcast tooling",
-              "User growth analytics",
-              "Failure response controls",
-            ].map((item) => (
-              <div
-                key={item}
-                className="rounded-xl border border-[#dbe4ec] bg-[#f8fbfd] px-3 py-2 text-sm text-[#3f5b70]"
-              >
-                {item}
-              </div>
-            ))}
+      <div className="mx-auto w-full max-w-[460px]">
+        <section className={`${panelClass} login-panel p-6 sm:p-8`}>
+          <div className="mb-5 flex justify-end">
+            <ThemeToggle className="w-full max-w-[220px]" />
           </div>
-        </section>
 
-        <section className={`${panelClass} p-6 sm:p-8`}>
-          <p className="text-xs font-mono uppercase tracking-[0.22em] text-[#4f6a81]">
+          <p className="login-eyebrow text-xs font-mono uppercase tracking-[0.22em] text-[#4f6a81]">
             Sign in
           </p>
-          <h2 className="mt-2 text-3xl font-semibold text-[#10202f]">Admin Login</h2>
-          <p className="mt-2 text-sm text-[#5d7386]">
+          <h2 className="login-title mt-2 text-3xl font-semibold text-[#10202f]">Admin Login</h2>
+          <p className="login-copy mt-2 text-sm text-[#5d7386]">
             Enter your admin credentials to open the operations dashboard.
           </p>
 
@@ -117,9 +92,9 @@ export default function LoginForm() {
               onChange={setUsername}
               autoComplete="username"
               isDisabled={submitting}
-              wrapperClassName="!h-11 !rounded-xl !bg-white !ring-1 !ring-[#d4dee6] focus-within:!ring-[#4f84ac]"
-              inputClassName="!px-3 !py-0 !text-sm !text-[#173248]"
-              className="[&_[data-label]]:!text-sm [&_[data-label]]:!text-[#2b495f]"
+              wrapperClassName="login-input-wrapper !h-11 !rounded-xl !bg-white !ring-1 !ring-[#d4dee6] focus-within:!ring-[#4f84ac]"
+              inputClassName="login-input-text !px-3 !py-0 !text-sm !text-[#173248]"
+              className="login-input-field [&_[data-label]]:!text-sm [&_[data-label]]:!text-[#2b495f]"
             />
 
             <Input
@@ -129,13 +104,13 @@ export default function LoginForm() {
               onChange={setPassword}
               autoComplete="current-password"
               isDisabled={submitting}
-              wrapperClassName="!h-11 !rounded-xl !bg-white !ring-1 !ring-[#d4dee6] focus-within:!ring-[#4f84ac]"
-              inputClassName="!px-3 !py-0 !text-sm !text-[#173248]"
-              className="[&_[data-label]]:!text-sm [&_[data-label]]:!text-[#2b495f]"
+              wrapperClassName="login-input-wrapper !h-11 !rounded-xl !bg-white !ring-1 !ring-[#d4dee6] focus-within:!ring-[#4f84ac]"
+              inputClassName="login-input-text !px-3 !py-0 !text-sm !text-[#173248]"
+              className="login-input-field [&_[data-label]]:!text-sm [&_[data-label]]:!text-[#2b495f]"
             />
 
             {error ? (
-              <p className="rounded-xl border border-[#f4c5c5] bg-[#fff2f2] px-3 py-2 text-sm text-[#9a2c2c]">
+              <p className="login-error rounded-xl border border-[#f4c5c5] bg-[#fff2f2] px-3 py-2 text-sm text-[#9a2c2c]">
                 {error}
               </p>
             ) : null}
@@ -143,7 +118,7 @@ export default function LoginForm() {
             <Button
               type="submit"
               isDisabled={submitting}
-              className="h-11 w-full rounded-xl !bg-[#173d59] !text-sm !font-semibold !text-white hover:!bg-[#204e72] disabled:!opacity-60"
+              className="login-submit-btn h-11 w-full rounded-xl !bg-[#173d59] !text-sm !font-semibold !text-white hover:!bg-[#204e72] disabled:!opacity-60"
             >
               {submitting ? "Signing in..." : "Sign in"}
             </Button>

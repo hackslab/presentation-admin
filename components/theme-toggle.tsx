@@ -68,6 +68,7 @@ export default function ThemeToggle({ className = "" }: ThemeToggleProps) {
       const nextTheme = currentTheme === "dark" ? "light" : "dark";
 
       document.documentElement.dataset.theme = nextTheme;
+      document.documentElement.classList.toggle("dark", nextTheme === "dark");
 
       try {
         window.localStorage.setItem(STORAGE_KEY, nextTheme);

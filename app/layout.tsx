@@ -32,9 +32,13 @@ const themeInitScript = `
           ? "dark"
           : "light";
 
-    document.documentElement.dataset.theme = theme;
+    const root = document.documentElement;
+    root.dataset.theme = theme;
+    root.classList.toggle("dark", theme === "dark");
   } catch {
-    document.documentElement.dataset.theme = "light";
+    const root = document.documentElement;
+    root.dataset.theme = "light";
+    root.classList.remove("dark");
   }
 })();
 `;
