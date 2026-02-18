@@ -287,6 +287,18 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function SkeletonBlock({ className }: { className?: string }) {
+  return (
+    <div
+      aria-hidden="true"
+      className={cn(
+        "animate-pulse rounded-md bg-[var(--skeleton-fill)]",
+        className,
+      )}
+    />
+  );
+}
+
 export default function Home() {
   const pathname = usePathname();
   const router = useRouter();
@@ -308,6 +320,10 @@ export default function Home() {
   const [admins, setAdmins] = useState<AdminProfile[]>([]);
 
   const [isLoading, setIsLoading] = useState(false);
+  const [isUsersLoading, setIsUsersLoading] = useState(true);
+  const [isPresentationsLoading, setIsPresentationsLoading] = useState(true);
+  const [isSettingsLoading, setIsSettingsLoading] = useState(true);
+  const [isAdminsLoading, setIsAdminsLoading] = useState(true);
 
   const [userSearch, setUserSearch] = useState("");
   const [userLimit, setUserLimit] = useState(20);
@@ -391,23 +407,35 @@ export default function Home() {
   }, [apiRequest]);
 
   const fetchUsers = useCallback(async () => {
-    const query = new URLSearchParams();
+    setIsUsersLoading(true);
 
-    if (userSearch.trim()) {
-      query.set("search", userSearch.trim());
+    try {
+      const query = new URLSearchParams();
+
+      if (userSearch.trim()) {
+        query.set("search", userSearch.trim());
+      }
+
+      query.set("limit", `${Math.max(1, Math.min(200, userLimit))}`);
+
+      const data = await apiRequest<UserRow[]>(
+        `/admin/users?${query.toString()}`,
+      );
+      setUsers(data);
+    } finally {
+      setIsUsersLoading(false);
     }
-
-    query.set("limit", `${Math.max(1, Math.min(200, userLimit))}`);
-
-    const data = await apiRequest<UserRow[]>(
-      `/admin/users?${query.toString()}`,
-    );
-    setUsers(data);
   }, [apiRequest, userLimit, userSearch]);
 
   const fetchUsersInitial = useCallback(async () => {
-    const data = await apiRequest<UserRow[]>("/admin/users?limit=20");
-    setUsers(data);
+    setIsUsersLoading(true);
+
+    try {
+      const data = await apiRequest<UserRow[]>("/admin/users?limit=20");
+      setUsers(data);
+    } finally {
+      setIsUsersLoading(false);
+    }
   }, [apiRequest]);
 
   const fetchOverviewUsers = useCallback(async () => {
@@ -417,38 +445,54 @@ export default function Home() {
   }, [apiRequest]);
 
   const fetchPresentations = useCallback(async () => {
-    const query = new URLSearchParams();
+    setIsPresentationsLoading(true);
 
-    if (presentationStatus !== "all") {
-      query.set("status", presentationStatus);
+    try {
+      const query = new URLSearchParams();
+
+      if (presentationStatus !== "all") {
+        query.set("status", presentationStatus);
+      }
+
+      query.set("limit", `${Math.max(1, Math.min(200, presentationLimit))}`);
+
+      const data = await apiRequest<PresentationRow[]>(
+        `/admin/presentations?${query.toString()}`,
+      );
+      setPresentations(data);
+    } finally {
+      setIsPresentationsLoading(false);
     }
-
-    query.set("limit", `${Math.max(1, Math.min(200, presentationLimit))}`);
-
-    const data = await apiRequest<PresentationRow[]>(
-      `/admin/presentations?${query.toString()}`,
-    );
-    setPresentations(data);
   }, [apiRequest, presentationLimit, presentationStatus]);
 
   const fetchRuntimeSettings = useCallback(async () => {
-    const data = await apiRequest<RuntimeSettingsResponse>("/admin/settings");
-    setRuntimeSettings(data);
-    setMainThemePromptCharacterLimitInput(
-      `${data.mainThemePromptCharacterLimit}`,
-    );
-    setFreePresentationGenerationLimitInput(
-      `${data.freePresentationGenerationLimit}`,
-    );
+    setIsSettingsLoading(true);
+
+    try {
+      const data = await apiRequest<RuntimeSettingsResponse>("/admin/settings");
+      setRuntimeSettings(data);
+      setMainThemePromptCharacterLimitInput(
+        `${data.mainThemePromptCharacterLimit}`,
+      );
+      setFreePresentationGenerationLimitInput(
+        `${data.freePresentationGenerationLimit}`,
+      );
+    } finally {
+      setIsSettingsLoading(false);
+    }
   }, [apiRequest]);
 
   const fetchAdmins = useCallback(async () => {
+    setIsAdminsLoading(true);
+
     try {
       const data = await apiRequest<AdminProfile[]>("/admin/admins");
       setAdmins(data);
     } catch (error) {
       setAdmins([]);
       toast.error(toErrorMessage(error));
+    } finally {
+      setIsAdminsLoading(false);
     }
   }, [apiRequest]);
 
@@ -732,6 +776,14 @@ export default function Home() {
     return "overview";
   }, [pathname]);
 
+  const showPendingQueueSkeleton =
+    isPresentationsLoading && pendingPresentations.length === 0;
+  const showUsersSkeleton = isUsersLoading && users.length === 0;
+  const showPresentationsSkeleton =
+    isPresentationsLoading && presentations.length === 0;
+  const showSettingsSkeleton = isSettingsLoading && !runtimeSettings;
+  const showAdminsSkeleton = isAdminsLoading && admins.length === 0;
+
   const sectionCopy = useMemo(
     () => ({
       overview: {
@@ -1012,7 +1064,7 @@ export default function Home() {
 
         <div className="relative mx-auto max-w-[1400px] p-4 md:p-8">
           <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
-            <aside className="surface-glass flex min-h-[calc(100vh-4rem)] flex-col rounded-3xl p-5">
+            <aside className="surface-glass flex h-fit self-start flex-col rounded-3xl p-5 lg:sticky lg:top-8">
               <div className="relative overflow-hidden rounded-2xl p-4 surface-muted">
                 <ShineBorder
                   borderWidth={1}
@@ -1095,11 +1147,16 @@ export default function Home() {
                       className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] text-main transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {isLoading ? (
-                        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        <Loader2
+                          className="size-4 animate-spin"
+                          aria-hidden="true"
+                        />
                       ) : (
                         <RefreshCw className="size-4" aria-hidden="true" />
                       )}
-                      <span className="sr-only">{isLoading ? "Syncing all" : "Sync all"}</span>
+                      <span className="sr-only">
+                        {isLoading ? "Syncing all" : "Sync all"}
+                      </span>
                     </button>
 
                     <button
@@ -1126,6 +1183,8 @@ export default function Home() {
                     </span>{" "}
                     ({profile.role}) - @{profile.username}
                   </p>
+                ) : isLoading ? (
+                  <SkeletonBlock className="mt-4 h-4 w-64" />
                 ) : null}
               </header>
 
@@ -1149,7 +1208,17 @@ export default function Home() {
                           className="surface-glass order-2 md:col-span-2"
                         >
                           <div className="space-y-2">
-                            {pendingPresentations.length === 0 ? (
+                            {showPendingQueueSkeleton ? (
+                              Array.from({ length: 4 }).map((_, index) => (
+                                <div
+                                  key={`pending-skeleton-${index}`}
+                                  className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2"
+                                >
+                                  <SkeletonBlock className="h-4 w-4/5" />
+                                  <SkeletonBlock className="mt-2 h-3 w-2/3" />
+                                </div>
+                              ))
+                            ) : pendingPresentations.length === 0 ? (
                               <p className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-muted">
                                 No pending presentations in current filter.
                               </p>
@@ -1179,7 +1248,10 @@ export default function Home() {
                                     title="Mark failed"
                                     className="inline-flex size-7 items-center justify-center rounded-lg border border-rose-300 bg-rose-100 text-rose-700"
                                   >
-                                    <XCircle className="size-3.5" aria-hidden="true" />
+                                    <XCircle
+                                      className="size-3.5"
+                                      aria-hidden="true"
+                                    />
                                     <span className="sr-only">Mark failed</span>
                                   </button>
                                 </div>
@@ -1389,12 +1461,26 @@ export default function Home() {
                                 onClick={() => {
                                   void fetchRuntimeSettings();
                                 }}
-                                disabled={!session || isSavingRuntimeSettings}
+                                disabled={
+                                  !session ||
+                                  isSavingRuntimeSettings ||
+                                  isSettingsLoading
+                                }
                                 aria-label="Reload settings"
                                 title="Reload settings"
                                 className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] text-main transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
                               >
-                                <RefreshCw className="size-4" aria-hidden="true" />
+                                {isSettingsLoading ? (
+                                  <Loader2
+                                    className="size-4 animate-spin"
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <RefreshCw
+                                    className="size-4"
+                                    aria-hidden="true"
+                                  />
+                                )}
                                 <span className="sr-only">Reload settings</span>
                               </button>
 
@@ -1405,6 +1491,7 @@ export default function Home() {
                                 }}
                                 disabled={
                                   isSavingRuntimeSettings ||
+                                  isSettingsLoading ||
                                   !runtimeSettings ||
                                   !mainThemePromptCharacterLimitInput.trim() ||
                                   !freePresentationGenerationLimitInput.trim()
@@ -1439,87 +1526,111 @@ export default function Home() {
                           </div>
 
                           <div className="mt-4 grid gap-3 md:grid-cols-2">
-                            <article className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
-                              <div>
-                                <h4 className="text-xs font-semibold tracking-wide text-main uppercase">
-                                  Main theme prompt limit
-                                </h4>
-                                <p className="mt-0.5 text-[0.72rem] text-muted">
-                                  Max characters for main theme prompt.
-                                </p>
-                              </div>
+                            {showSettingsSkeleton ? (
+                              Array.from({ length: 2 }).map((_, index) => (
+                                <article
+                                  key={`settings-skeleton-${index}`}
+                                  className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3"
+                                >
+                                  <SkeletonBlock className="h-4 w-40" />
+                                  <SkeletonBlock className="mt-2 h-3 w-2/3" />
+                                  <SkeletonBlock className="mt-4 h-3 w-24" />
+                                  <SkeletonBlock className="mt-2 h-8 w-28" />
+                                  <SkeletonBlock className="mt-2 h-3 w-5/6" />
+                                </article>
+                              ))
+                            ) : (
+                              <>
+                                <article className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                                  <div>
+                                    <h4 className="text-xs font-semibold tracking-wide text-main uppercase">
+                                      Main theme prompt limit
+                                    </h4>
+                                    <p className="mt-0.5 text-[0.72rem] text-muted">
+                                      Max characters for main theme prompt.
+                                    </p>
+                                  </div>
 
-                              <div className="mt-2 space-y-2">
-                                <p className="text-xs text-main">
-                                  Current:{" "}
-                                  <span className="font-semibold">
-                                    {runtimeSettings?.mainThemePromptCharacterLimit ??
-                                      "-"}
-                                  </span>
-                                </p>
+                                  <div className="mt-2 space-y-2">
+                                    <p className="text-xs text-main">
+                                      Current:{" "}
+                                      <span className="font-semibold">
+                                        {runtimeSettings?.mainThemePromptCharacterLimit ??
+                                          "-"}
+                                      </span>
+                                    </p>
 
-                                <input
-                                  type="number"
-                                  min={MAIN_THEME_PROMPT_LIMIT_MIN}
-                                  max={MAIN_THEME_PROMPT_LIMIT_MAX}
-                                  value={mainThemePromptCharacterLimitInput}
-                                  onChange={(event) => {
-                                    setMainThemePromptCharacterLimitInput(
-                                      event.target.value,
-                                    );
-                                  }}
-                                  className="w-28 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2.5 py-1.5 text-xs text-main outline-none focus:border-[var(--accent)]"
-                                  required
-                                />
+                                    <input
+                                      type="number"
+                                      min={MAIN_THEME_PROMPT_LIMIT_MIN}
+                                      max={MAIN_THEME_PROMPT_LIMIT_MAX}
+                                      value={mainThemePromptCharacterLimitInput}
+                                      onChange={(event) => {
+                                        setMainThemePromptCharacterLimitInput(
+                                          event.target.value,
+                                        );
+                                      }}
+                                      className="w-28 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2.5 py-1.5 text-xs text-main outline-none focus:border-[var(--accent)]"
+                                      required
+                                    />
 
-                                <p className="text-[0.72rem] text-muted">
-                                  Allowed range: {MAIN_THEME_PROMPT_LIMIT_MIN}-
-                                  {MAIN_THEME_PROMPT_LIMIT_MAX} characters.
-                                </p>
-                              </div>
-                            </article>
+                                    <p className="text-[0.72rem] text-muted">
+                                      Allowed range:{" "}
+                                      {MAIN_THEME_PROMPT_LIMIT_MIN}-
+                                      {MAIN_THEME_PROMPT_LIMIT_MAX} characters.
+                                    </p>
+                                  </div>
+                                </article>
 
-                            <article className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
-                              <div>
-                                <h4 className="text-xs font-semibold tracking-wide text-main uppercase">
-                                  Free generation limit
-                                </h4>
-                                <p className="mt-0.5 text-[0.72rem] text-muted">
-                                  Free presentation quota per 24 hours.
-                                </p>
-                              </div>
+                                <article className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                                  <div>
+                                    <h4 className="text-xs font-semibold tracking-wide text-main uppercase">
+                                      Free generation limit
+                                    </h4>
+                                    <p className="mt-0.5 text-[0.72rem] text-muted">
+                                      Free presentation quota per 24 hours.
+                                    </p>
+                                  </div>
 
-                              <div className="mt-2 space-y-2">
-                                <p className="text-xs text-main">
-                                  Current:{" "}
-                                  <span className="font-semibold">
-                                    {runtimeSettings?.freePresentationGenerationLimit ??
-                                      "-"}
-                                  </span>
-                                </p>
+                                  <div className="mt-2 space-y-2">
+                                    <p className="text-xs text-main">
+                                      Current:{" "}
+                                      <span className="font-semibold">
+                                        {runtimeSettings?.freePresentationGenerationLimit ??
+                                          "-"}
+                                      </span>
+                                    </p>
 
-                                <input
-                                  type="number"
-                                  min={FREE_PRESENTATION_GENERATION_LIMIT_MIN}
-                                  max={FREE_PRESENTATION_GENERATION_LIMIT_MAX}
-                                  value={freePresentationGenerationLimitInput}
-                                  onChange={(event) => {
-                                    setFreePresentationGenerationLimitInput(
-                                      event.target.value,
-                                    );
-                                  }}
-                                  className="w-28 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2.5 py-1.5 text-xs text-main outline-none focus:border-[var(--accent)]"
-                                  required
-                                />
+                                    <input
+                                      type="number"
+                                      min={
+                                        FREE_PRESENTATION_GENERATION_LIMIT_MIN
+                                      }
+                                      max={
+                                        FREE_PRESENTATION_GENERATION_LIMIT_MAX
+                                      }
+                                      value={
+                                        freePresentationGenerationLimitInput
+                                      }
+                                      onChange={(event) => {
+                                        setFreePresentationGenerationLimitInput(
+                                          event.target.value,
+                                        );
+                                      }}
+                                      className="w-28 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2.5 py-1.5 text-xs text-main outline-none focus:border-[var(--accent)]"
+                                      required
+                                    />
 
-                                <p className="text-[0.72rem] text-muted">
-                                  Allowed range:{" "}
-                                  {FREE_PRESENTATION_GENERATION_LIMIT_MIN}-
-                                  {FREE_PRESENTATION_GENERATION_LIMIT_MAX} per
-                                  24 hours.
-                                </p>
-                              </div>
-                            </article>
+                                    <p className="text-[0.72rem] text-muted">
+                                      Allowed range:{" "}
+                                      {FREE_PRESENTATION_GENERATION_LIMIT_MIN}-
+                                      {FREE_PRESENTATION_GENERATION_LIMIT_MAX}{" "}
+                                      per 24 hours.
+                                    </p>
+                                  </div>
+                                </article>
+                              </>
+                            )}
                           </div>
                         </article>
                       </section>
@@ -1533,9 +1644,6 @@ export default function Home() {
                               <h3 className="text-lg font-semibold text-main">
                                 Users
                               </h3>
-                              <p className="text-sm text-muted">
-                                GET /admin/users with search + limit
-                              </p>
                             </div>
 
                             <div className="flex gap-2">
@@ -1562,11 +1670,22 @@ export default function Home() {
                                 onClick={() => {
                                   void fetchUsers();
                                 }}
+                                disabled={isUsersLoading}
                                 aria-label="Reload users"
                                 title="Reload users"
-                                className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] text-main"
+                                className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] text-main disabled:cursor-not-allowed disabled:opacity-60"
                               >
-                                <RefreshCw className="size-4" aria-hidden="true" />
+                                {isUsersLoading ? (
+                                  <Loader2
+                                    className="size-4 animate-spin"
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <RefreshCw
+                                    className="size-4"
+                                    aria-hidden="true"
+                                  />
+                                )}
                                 <span className="sr-only">Reload users</span>
                               </button>
                             </div>
@@ -1583,34 +1702,57 @@ export default function Home() {
                                 </tr>
                               </thead>
                               <tbody>
-                                {users.slice(0, 10).map((user) => (
-                                  <tr
-                                    key={user.id}
-                                    className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
-                                  >
-                                    <td className="px-3 py-2 text-main">
-                                      <p className="font-medium">
-                                        {user.firstName}
-                                      </p>
-                                      <p className="text-xs text-muted">
-                                        @{user.username ?? "no_username"}
-                                      </p>
-                                    </td>
-                                    <td className="px-3 py-2 text-main">
-                                      {user.telegramId}
-                                    </td>
-                                    <td className="px-3 py-2 text-main">
-                                      {user.totalGenerations}
-                                    </td>
-                                    <td className="px-3 py-2 text-main">
-                                      {formatDate(user.lastGenerationAt)}
-                                    </td>
-                                  </tr>
-                                ))}
+                                {showUsersSkeleton
+                                  ? Array.from({ length: 6 }).map(
+                                      (_, index) => (
+                                        <tr
+                                          key={`users-skeleton-${index}`}
+                                          className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
+                                        >
+                                          <td className="px-3 py-2">
+                                            <SkeletonBlock className="h-4 w-32" />
+                                            <SkeletonBlock className="mt-2 h-3 w-24" />
+                                          </td>
+                                          <td className="px-3 py-2">
+                                            <SkeletonBlock className="h-4 w-28" />
+                                          </td>
+                                          <td className="px-3 py-2">
+                                            <SkeletonBlock className="h-4 w-10" />
+                                          </td>
+                                          <td className="px-3 py-2">
+                                            <SkeletonBlock className="h-4 w-32" />
+                                          </td>
+                                        </tr>
+                                      ),
+                                    )
+                                  : users.slice(0, 10).map((user) => (
+                                      <tr
+                                        key={user.id}
+                                        className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
+                                      >
+                                        <td className="px-3 py-2 text-main">
+                                          <p className="font-medium">
+                                            {user.firstName}
+                                          </p>
+                                          <p className="text-xs text-muted">
+                                            @{user.username ?? "no_username"}
+                                          </p>
+                                        </td>
+                                        <td className="px-3 py-2 text-main">
+                                          {user.telegramId}
+                                        </td>
+                                        <td className="px-3 py-2 text-main">
+                                          {user.totalGenerations}
+                                        </td>
+                                        <td className="px-3 py-2 text-main">
+                                          {formatDate(user.lastGenerationAt)}
+                                        </td>
+                                      </tr>
+                                    ))}
                               </tbody>
                             </table>
 
-                            {users.length === 0 ? (
+                            {!isUsersLoading && users.length === 0 ? (
                               <p className="px-3 py-5 text-sm text-muted">
                                 No users found for this filter.
                               </p>
@@ -1669,12 +1811,25 @@ export default function Home() {
                                 onClick={() => {
                                   void fetchPresentations();
                                 }}
+                                disabled={isPresentationsLoading}
                                 aria-label="Reload presentations"
                                 title="Reload presentations"
-                                className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] text-main"
+                                className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] text-main disabled:cursor-not-allowed disabled:opacity-60"
                               >
-                                <RefreshCw className="size-4" aria-hidden="true" />
-                                <span className="sr-only">Reload presentations</span>
+                                {isPresentationsLoading ? (
+                                  <Loader2
+                                    className="size-4 animate-spin"
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <RefreshCw
+                                    className="size-4"
+                                    aria-hidden="true"
+                                  />
+                                )}
+                                <span className="sr-only">
+                                  Reload presentations
+                                </span>
                               </button>
                             </div>
                           </div>
@@ -1695,97 +1850,140 @@ export default function Home() {
                                   </tr>
                                 </thead>
                                 <tbody>
-                                  {presentations.map((item) => (
-                                    <tr
-                                      key={item.id}
-                                      className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
-                                    >
-                                      <td className="px-3 py-2 font-medium text-main">
-                                        #{item.id}
-                                      </td>
-                                      <td className="px-3 py-2 text-main">
-                                        <p
-                                          className="max-w-xs whitespace-normal break-words"
-                                          style={{
-                                            display: "-webkit-box",
-                                            WebkitBoxOrient: "vertical",
-                                            WebkitLineClamp: 3,
-                                            overflow: "hidden",
-                                          }}
-                                        >
-                                          {item.metadata?.prompt ??
-                                            "Untitled prompt"}
-                                        </p>
-                                      </td>
-                                      <td className="px-3 py-2 text-main">
-                                        <p>{item.firstName}</p>
-                                        <p className="text-xs text-muted">
-                                          @{item.username ?? "no_username"}
-                                        </p>
-                                      </td>
-                                      <td className="px-3 py-2">
-                                        <span
-                                          className={cn(
-                                            "rounded-full border px-2 py-1 text-xs font-semibold",
-                                            statusPillClass(item.status),
-                                          )}
-                                        >
-                                          {item.status}
-                                        </span>
-                                      </td>
-                                      <td className="px-3 py-2 text-main">
-                                        {item.metadata?.language ?? "-"}
-                                      </td>
-                                      <td className="px-3 py-2 text-main">
-                                        {item.metadata?.pageCount ?? "-"}
-                                      </td>
-                                      <td className="px-3 py-2 text-main">
-                                        {formatDate(item.createdAt)}
-                                      </td>
-                                      <td className="px-3 py-2 text-main">
-                                        <div className="flex items-center gap-2">
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setSelectedPresentation(item);
-                                            }}
-                                            aria-label={`View presentation #${item.id}`}
-                                            title="View presentation"
-                                            className="inline-flex size-7 items-center justify-center rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] text-main"
+                                  {showPresentationsSkeleton
+                                    ? Array.from({ length: 7 }).map(
+                                        (_, index) => (
+                                          <tr
+                                            key={`presentations-skeleton-${index}`}
+                                            className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
                                           >
-                                            <Eye className="size-3.5" aria-hidden="true" />
-                                            <span className="sr-only">
-                                              View presentation
-                                            </span>
-                                          </button>
-
-                                          {item.status === "pending" ? (
-                                            <button
-                                              type="button"
-                                              onClick={() => {
-                                                void handleFailPresentation(
-                                                  item.id,
-                                                );
+                                            <td className="px-3 py-2">
+                                              <SkeletonBlock className="h-4 w-12" />
+                                            </td>
+                                            <td className="px-3 py-2">
+                                              <SkeletonBlock className="h-4 w-48" />
+                                              <SkeletonBlock className="mt-2 h-4 w-40" />
+                                            </td>
+                                            <td className="px-3 py-2">
+                                              <SkeletonBlock className="h-4 w-24" />
+                                              <SkeletonBlock className="mt-2 h-3 w-20" />
+                                            </td>
+                                            <td className="px-3 py-2">
+                                              <SkeletonBlock className="h-6 w-20 rounded-full" />
+                                            </td>
+                                            <td className="px-3 py-2">
+                                              <SkeletonBlock className="h-4 w-14" />
+                                            </td>
+                                            <td className="px-3 py-2">
+                                              <SkeletonBlock className="h-4 w-10" />
+                                            </td>
+                                            <td className="px-3 py-2">
+                                              <SkeletonBlock className="h-4 w-28" />
+                                            </td>
+                                            <td className="px-3 py-2">
+                                              <SkeletonBlock className="h-7 w-16" />
+                                            </td>
+                                          </tr>
+                                        ),
+                                      )
+                                    : presentations.map((item) => (
+                                        <tr
+                                          key={item.id}
+                                          className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
+                                        >
+                                          <td className="px-3 py-2 font-medium text-main">
+                                            #{item.id}
+                                          </td>
+                                          <td className="px-3 py-2 text-main">
+                                            <p
+                                              className="max-w-xs whitespace-normal break-words"
+                                              style={{
+                                                display: "-webkit-box",
+                                                WebkitBoxOrient: "vertical",
+                                                WebkitLineClamp: 3,
+                                                overflow: "hidden",
                                               }}
-                                              aria-label="Force fail"
-                                              title="Force fail"
-                                              className="inline-flex size-7 items-center justify-center rounded-lg border border-rose-300 bg-rose-100 text-rose-700"
                                             >
-                                              <XCircle className="size-3.5" aria-hidden="true" />
-                                              <span className="sr-only">
-                                                Force fail
-                                              </span>
-                                            </button>
-                                          ) : null}
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  ))}
+                                              {item.metadata?.prompt ??
+                                                "Untitled prompt"}
+                                            </p>
+                                          </td>
+                                          <td className="px-3 py-2 text-main">
+                                            <p>{item.firstName}</p>
+                                            <p className="text-xs text-muted">
+                                              @{item.username ?? "no_username"}
+                                            </p>
+                                          </td>
+                                          <td className="px-3 py-2">
+                                            <span
+                                              className={cn(
+                                                "rounded-full border px-2 py-1 text-xs font-semibold",
+                                                statusPillClass(item.status),
+                                              )}
+                                            >
+                                              {item.status}
+                                            </span>
+                                          </td>
+                                          <td className="px-3 py-2 text-main">
+                                            {item.metadata?.language ?? "-"}
+                                          </td>
+                                          <td className="px-3 py-2 text-main">
+                                            {item.metadata?.pageCount ?? "-"}
+                                          </td>
+                                          <td className="px-3 py-2 text-main">
+                                            {formatDate(item.createdAt)}
+                                          </td>
+                                          <td className="px-3 py-2 text-main">
+                                            <div className="flex items-center gap-2">
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setSelectedPresentation(item);
+                                                }}
+                                                aria-label={`View presentation #${item.id}`}
+                                                title="View presentation"
+                                                className="inline-flex size-7 items-center justify-center rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] text-main"
+                                              >
+                                                <Eye
+                                                  className="size-3.5"
+                                                  aria-hidden="true"
+                                                />
+                                                <span className="sr-only">
+                                                  View presentation
+                                                </span>
+                                              </button>
+
+                                              {item.status === "pending" ? (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    void handleFailPresentation(
+                                                      item.id,
+                                                    );
+                                                  }}
+                                                  aria-label="Force fail"
+                                                  title="Force fail"
+                                                  className="inline-flex size-7 items-center justify-center rounded-lg border border-rose-300 bg-rose-100 text-rose-700"
+                                                >
+                                                  <XCircle
+                                                    className="size-3.5"
+                                                    aria-hidden="true"
+                                                  />
+                                                  <span className="sr-only">
+                                                    Force fail
+                                                  </span>
+                                                </button>
+                                              ) : null}
+                                            </div>
+                                          </td>
+                                        </tr>
+                                      ))}
                                 </tbody>
                               </table>
                             </div>
 
-                            {presentations.length === 0 ? (
+                            {!isPresentationsLoading &&
+                            presentations.length === 0 ? (
                               <p className="px-3 py-5 text-sm text-muted">
                                 No presentations found for selected filter.
                               </p>
@@ -1870,7 +2068,20 @@ export default function Home() {
                           </p>
 
                           <div className="mt-4 space-y-2">
-                            {admins.length === 0 ? (
+                            {showAdminsSkeleton ? (
+                              Array.from({ length: 3 }).map((_, index) => (
+                                <div
+                                  key={`admins-skeleton-${index}`}
+                                  className="flex items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2"
+                                >
+                                  <div>
+                                    <SkeletonBlock className="h-4 w-28" />
+                                    <SkeletonBlock className="mt-2 h-3 w-20" />
+                                  </div>
+                                  <SkeletonBlock className="h-6 w-20 rounded-full" />
+                                </div>
+                              ))
+                            ) : admins.length === 0 ? (
                               <p className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-muted">
                                 No admins found.
                               </p>
@@ -1949,7 +2160,10 @@ export default function Home() {
                                 title="Create admin"
                                 className="sm:col-span-2 inline-flex items-center justify-center rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-main"
                               >
-                                <UserPlus className="size-4" aria-hidden="true" />
+                                <UserPlus
+                                  className="size-4"
+                                  aria-hidden="true"
+                                />
                                 <span className="sr-only">Create admin</span>
                               </button>
                             </form>
@@ -2007,7 +2221,10 @@ export default function Home() {
                     <div className="max-h-[70vh] space-y-4 overflow-y-auto p-4">
                       <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3 text-sm text-main">
                         <p>
-                          User: <span className="font-semibold">{selectedPresentation.firstName}</span>
+                          User:{" "}
+                          <span className="font-semibold">
+                            {selectedPresentation.firstName}
+                          </span>
                         </p>
                         <p className="mt-1 text-xs text-muted">
                           @{selectedPresentation.username ?? "no_username"} -
@@ -2027,13 +2244,18 @@ export default function Home() {
 
                       <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3 text-sm text-main">
                         <p>
-                          Language: {selectedPresentation.metadata?.language ?? "-"}
+                          Language:{" "}
+                          {selectedPresentation.metadata?.language ?? "-"}
                         </p>
                         <p className="mt-1">
-                          Slides: {selectedPresentation.metadata?.pageCount ?? "-"}
+                          Slides:{" "}
+                          {selectedPresentation.metadata?.pageCount ?? "-"}
                         </p>
                         <p className="mt-1">
-                          Uses images: {selectedPresentation.metadata?.useImages ? "Yes" : "No"}
+                          Uses images:{" "}
+                          {selectedPresentation.metadata?.useImages
+                            ? "Yes"
+                            : "No"}
                         </p>
                         <p className="mt-1 break-all">
                           File: {selectedPresentation.metadata?.fileName ?? "-"}
