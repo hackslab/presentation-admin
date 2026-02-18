@@ -612,7 +612,7 @@ export default function Home() {
   const fetchPresentationsCurrentPage = useCallback(async () => {
     const after = presentationsAfterHistory[presentationsPage - 1] ?? null;
     await fetchPresentationsPage({ page: presentationsPage, after });
-  }, [fetchPresentationsAfterHistory, fetchPresentationsPage, presentationsPage]);
+  }, [fetchPresentationsPage, presentationsAfterHistory, presentationsPage]);
 
   const fetchPresentationsNextPage = useCallback(async () => {
     if (!presentationsPageInfo.hasNextPage || !presentationsPageInfo.endCursor) {
@@ -816,6 +816,54 @@ export default function Home() {
       pathname !== "/" ? `?next=${encodeURIComponent(pathname)}` : "";
     router.replace(`/login${nextPath}`);
   }, [isHydrated, pathname, router, session?.accessToken]);
+
+  useEffect(() => {
+    if (!isHydrated) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setDebouncedUserSearch(userSearch.trim());
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [isHydrated, userSearch]);
+
+  useEffect(() => {
+    if (!isHydrated || !session?.accessToken || !pathname.startsWith("/users")) {
+      return;
+    }
+
+    void fetchUsersFirstPage();
+  }, [
+    fetchUsersFirstPage,
+    isHydrated,
+    pathname,
+    session?.accessToken,
+    userLimit,
+    debouncedUserSearch,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isHydrated ||
+      !session?.accessToken ||
+      !pathname.startsWith("/presentations")
+    ) {
+      return;
+    }
+
+    void fetchPresentationsFirstPage();
+  }, [
+    fetchPresentationsFirstPage,
+    isHydrated,
+    pathname,
+    presentationLimit,
+    presentationStatus,
+    session?.accessToken,
+  ]);
 
   const pendingPresentations = presentations.filter(
     (item) => item.status === "pending",
