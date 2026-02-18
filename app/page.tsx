@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
+  ChangeEvent,
   FormEvent,
   useCallback,
   useEffect,
@@ -102,6 +103,21 @@ interface BroadcastResult {
   failed: number;
 }
 
+interface BroadcastHistoryItem {
+  id: number;
+  adminId: number | null;
+  adminName: string | null;
+  adminUsername: string | null;
+  message: string;
+  imageDataUrl: string | null;
+  imageFileName: string | null;
+  imageMimeType: string | null;
+  recipients: number;
+  sent: number;
+  failed: number;
+  createdAt: string;
+}
+
 interface RuntimeSettingsResponse {
   mainThemePromptCharacterLimit: number;
   freePresentationGenerationLimit: number;
@@ -144,6 +160,7 @@ const MAIN_THEME_PROMPT_LIMIT_MIN = 10;
 const MAIN_THEME_PROMPT_LIMIT_MAX = 4096;
 const FREE_PRESENTATION_GENERATION_LIMIT_MIN = 1;
 const FREE_PRESENTATION_GENERATION_LIMIT_MAX = 100;
+const BROADCAST_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 const EMPTY_CONNECTION_PAGE_INFO: ConnectionPageInfo = {
   hasNextPage: false,
   hasPreviousPage: false,
@@ -323,6 +340,29 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+
+    reader.onload = () => {
+      const result = reader.result;
+
+      if (typeof result !== "string") {
+        reject(new Error("Failed to read image data."));
+        return;
+      }
+
+      resolve(result);
+    };
+
+    reader.onerror = () => {
+      reject(new Error("Failed to read image data."));
+    };
+
+    reader.readAsDataURL(file);
+  });
+}
+
 function SkeletonBlock({ className }: { className?: string }) {
   return (
     <div
@@ -387,6 +427,18 @@ export default function Home() {
   const [broadcastMessage, setBroadcastMessage] = useState("");
   const [broadcastResult, setBroadcastResult] =
     useState<BroadcastResult | null>(null);
+  const [broadcastHistory, setBroadcastHistory] = useState<
+    BroadcastHistoryItem[]
+  >([]);
+  const [isBroadcastHistoryLoading, setIsBroadcastHistoryLoading] =
+    useState(false);
+  const [isBroadcastSending, setIsBroadcastSending] = useState(false);
+  const [broadcastImageFile, setBroadcastImageFile] = useState<File | null>(
+    null,
+  );
+  const [broadcastImagePreviewUrl, setBroadcastImagePreviewUrl] = useState<
+    string | null
+  >(null);
   const [runtimeSettings, setRuntimeSettings] =
     useState<RuntimeSettingsResponse | null>(null);
   const [
