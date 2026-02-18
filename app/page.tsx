@@ -461,64 +461,192 @@ export default function Home() {
     setOverview(data);
   }, [apiRequest]);
 
-  const fetchUsers = useCallback(async () => {
-    setIsUsersLoading(true);
+  const fetchUsersPage = useCallback(
+    async ({
+      after = null,
+      page = 1,
+      search = debouncedUserSearch,
+    }: {
+      after?: string | null;
+      page?: number;
+      search?: string;
+    } = {}) => {
+      setIsUsersLoading(true);
+      const requestVersion = ++usersRequestVersionRef.current;
 
-    try {
-      const query = new URLSearchParams();
+      try {
+        const query = new URLSearchParams();
 
-      if (userSearch.trim()) {
-        query.set("search", userSearch.trim());
+        if (search) {
+          query.set("search", search);
+        }
+
+        query.set("first", `${Math.max(1, Math.min(200, userLimit))}`);
+
+        if (after) {
+          query.set("after", after);
+        }
+
+        const data = await apiRequest<UsersConnectionResponse>(
+          `/admin/users?${query.toString()}`,
+        );
+
+        if (requestVersion !== usersRequestVersionRef.current) {
+          return;
+        }
+
+        setUsers(data.nodes);
+        setUsersTotalCount(data.totalCount);
+        setUsersPageInfo(data.pageInfo ?? EMPTY_CONNECTION_PAGE_INFO);
+        setUsersPage(Math.max(1, page));
+      } finally {
+        if (requestVersion === usersRequestVersionRef.current) {
+          setIsUsersLoading(false);
+        }
       }
+    },
+    [apiRequest, debouncedUserSearch, userLimit],
+  );
 
-      query.set("limit", `${Math.max(1, Math.min(200, userLimit))}`);
+  const fetchUsersFirstPage = useCallback(async () => {
+    setUsersPage(1);
+    setUsersAfterHistory([null]);
+    setUsersPageInfo(EMPTY_CONNECTION_PAGE_INFO);
 
-      const data = await apiRequest<UserRow[]>(
-        `/admin/users?${query.toString()}`,
-      );
-      setUsers(data);
-    } finally {
-      setIsUsersLoading(false);
+    await fetchUsersPage({ page: 1, after: null });
+  }, [fetchUsersPage]);
+
+  const fetchUsersCurrentPage = useCallback(async () => {
+    const after = usersAfterHistory[usersPage - 1] ?? null;
+    await fetchUsersPage({ page: usersPage, after });
+  }, [fetchUsersPage, usersAfterHistory, usersPage]);
+
+  const fetchUsersNextPage = useCallback(async () => {
+    if (!usersPageInfo.hasNextPage || !usersPageInfo.endCursor) {
+      return;
     }
-  }, [apiRequest, userLimit, userSearch]);
 
-  const fetchUsersInitial = useCallback(async () => {
-    setIsUsersLoading(true);
+    const nextPage = usersPage + 1;
+    const nextAfter = usersPageInfo.endCursor;
 
-    try {
-      const data = await apiRequest<UserRow[]>("/admin/users?limit=20");
-      setUsers(data);
-    } finally {
-      setIsUsersLoading(false);
+    setUsersAfterHistory((previous) => {
+      const trimmed = previous.slice(0, usersPage);
+      return [...trimmed, nextAfter];
+    });
+
+    await fetchUsersPage({ page: nextPage, after: nextAfter });
+  }, [fetchUsersPage, usersPage, usersPageInfo.endCursor, usersPageInfo.hasNextPage]);
+
+  const fetchUsersPreviousPage = useCallback(async () => {
+    if (usersPage <= 1) {
+      return;
     }
-  }, [apiRequest]);
+
+    const previousPage = usersPage - 1;
+    const previousAfter = usersAfterHistory[previousPage - 1] ?? null;
+
+    setUsersAfterHistory((previous) => previous.slice(0, previousPage));
+
+    await fetchUsersPage({ page: previousPage, after: previousAfter });
+  }, [fetchUsersPage, usersAfterHistory, usersPage]);
 
   const fetchOverviewUsers = useCallback(async () => {
-    const data = await apiRequest<UserRow[]>("/admin/users?limit=200");
-    setOverviewUsers(data);
+    const data = await apiRequest<UsersConnectionResponse>("/admin/users?first=200");
+    setOverviewUsers(data.nodes);
     setHasLoadedOverviewUsers(true);
   }, [apiRequest]);
 
-  const fetchPresentations = useCallback(async () => {
-    setIsPresentationsLoading(true);
+  const fetchPresentationsPage = useCallback(
+    async ({
+      after = null,
+      page = 1,
+    }: {
+      after?: string | null;
+      page?: number;
+    } = {}) => {
+      setIsPresentationsLoading(true);
+      const requestVersion = ++presentationsRequestVersionRef.current;
 
-    try {
-      const query = new URLSearchParams();
+      try {
+        const query = new URLSearchParams();
 
-      if (presentationStatus !== "all") {
-        query.set("status", presentationStatus);
+        if (presentationStatus !== "all") {
+          query.set("status", presentationStatus);
+        }
+
+        query.set("first", `${Math.max(1, Math.min(200, presentationLimit))}`);
+
+        if (after) {
+          query.set("after", after);
+        }
+
+        const data = await apiRequest<ConnectionResponse<PresentationRow>>(
+          `/admin/presentations?${query.toString()}`,
+        );
+
+        if (requestVersion !== presentationsRequestVersionRef.current) {
+          return;
+        }
+
+        setPresentations(data.nodes);
+        setPresentationsTotalCount(data.totalCount);
+        setPresentationsPageInfo(data.pageInfo ?? EMPTY_CONNECTION_PAGE_INFO);
+        setPresentationsPage(Math.max(1, page));
+      } finally {
+        if (requestVersion === presentationsRequestVersionRef.current) {
+          setIsPresentationsLoading(false);
+        }
       }
+    },
+    [apiRequest, presentationLimit, presentationStatus],
+  );
 
-      query.set("limit", `${Math.max(1, Math.min(200, presentationLimit))}`);
+  const fetchPresentationsFirstPage = useCallback(async () => {
+    setPresentationsPage(1);
+    setPresentationsAfterHistory([null]);
+    setPresentationsPageInfo(EMPTY_CONNECTION_PAGE_INFO);
 
-      const data = await apiRequest<PresentationRow[]>(
-        `/admin/presentations?${query.toString()}`,
-      );
-      setPresentations(data);
-    } finally {
-      setIsPresentationsLoading(false);
+    await fetchPresentationsPage({ page: 1, after: null });
+  }, [fetchPresentationsPage]);
+
+  const fetchPresentationsCurrentPage = useCallback(async () => {
+    const after = presentationsAfterHistory[presentationsPage - 1] ?? null;
+    await fetchPresentationsPage({ page: presentationsPage, after });
+  }, [fetchPresentationsAfterHistory, fetchPresentationsPage, presentationsPage]);
+
+  const fetchPresentationsNextPage = useCallback(async () => {
+    if (!presentationsPageInfo.hasNextPage || !presentationsPageInfo.endCursor) {
+      return;
     }
-  }, [apiRequest, presentationLimit, presentationStatus]);
+
+    const nextPage = presentationsPage + 1;
+    const nextAfter = presentationsPageInfo.endCursor;
+
+    setPresentationsAfterHistory((previous) => {
+      const trimmed = previous.slice(0, presentationsPage);
+      return [...trimmed, nextAfter];
+    });
+
+    await fetchPresentationsPage({ page: nextPage, after: nextAfter });
+  }, [
+    fetchPresentationsPage,
+    presentationsPage,
+    presentationsPageInfo.endCursor,
+    presentationsPageInfo.hasNextPage,
+  ]);
+
+  const fetchPresentationsPreviousPage = useCallback(async () => {
+    if (presentationsPage <= 1) {
+      return;
+    }
+
+    const previousPage = presentationsPage - 1;
+    const previousAfter = presentationsAfterHistory[previousPage - 1] ?? null;
+
+    setPresentationsAfterHistory((previous) => previous.slice(0, previousPage));
+
+    await fetchPresentationsPage({ page: previousPage, after: previousAfter });
+  }, [fetchPresentationsPage, presentationsAfterHistory, presentationsPage]);
 
   const fetchRuntimeSettings = useCallback(async () => {
     setIsSettingsLoading(true);
@@ -558,13 +686,17 @@ export default function Home() {
 
     setIsLoading(true);
 
+    const presentationFetchTask = pathname.startsWith("/presentations")
+      ? fetchPresentationsCurrentPage()
+      : fetchPresentationsFirstPage();
+
     const results = await Promise.allSettled([
       fetchMe(),
       fetchOverview(),
       fetchOverviewUsers(),
-      fetchPresentations(),
+      presentationFetchTask,
       ...(pathname.startsWith("/settings") ? [fetchRuntimeSettings()] : []),
-      ...(pathname.startsWith("/users") ? [fetchUsersInitial()] : []),
+      ...(pathname.startsWith("/users") ? [fetchUsersCurrentPage()] : []),
       ...(pathname.startsWith("/admins") ? [fetchAdmins()] : []),
     ]);
 
@@ -583,9 +715,10 @@ export default function Home() {
     fetchMe,
     fetchOverview,
     fetchOverviewUsers,
-    fetchPresentations,
+    fetchPresentationsCurrentPage,
+    fetchPresentationsFirstPage,
     fetchRuntimeSettings,
-    fetchUsersInitial,
+    fetchUsersCurrentPage,
     session?.accessToken,
   ]);
 
