@@ -1248,6 +1248,16 @@ export default function Home() {
     setPresentationsPage(1);
     setPresentationsAfterHistory([null]);
     setPresentationsPageInfo(EMPTY_CONNECTION_PAGE_INFO);
+    setBroadcastMessage("");
+    setBroadcastResult(null);
+    setBroadcastHistory([]);
+    setIsBroadcastHistoryLoading(false);
+    setIsBroadcastSending(false);
+    setBroadcastImageFile(null);
+    if (broadcastImagePreviewUrl) {
+      URL.revokeObjectURL(broadcastImagePreviewUrl);
+    }
+    setBroadcastImagePreviewUrl(null);
     setAdmins([]);
     setRuntimeSettings(null);
     setMainThemePromptCharacterLimitInput("");
