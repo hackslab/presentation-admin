@@ -4,7 +4,6 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
 
-import { AnimatedCircularProgressBar } from "@/components/ui/animated-circular-progress-bar";
 import { BentoCard, BentoGrid } from "@/components/ui/bento-grid";
 import { ShineBorder } from "@/components/ui/shine-border";
 import { cn } from "@/lib/utils";
@@ -172,13 +171,6 @@ function formatPercent(value: number): string {
   }).format(value)}%`;
 }
 
-function formatDecimal(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
 function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -194,6 +186,7 @@ export default function Home() {
 
   const [overview, setOverview] = useState<OverviewResponse | null>(null);
   const [users, setUsers] = useState<UserRow[]>([]);
+  const [overviewUsers, setOverviewUsers] = useState<UserRow[]>([]);
   const [presentations, setPresentations] = useState<PresentationRow[]>([]);
   const [admins, setAdmins] = useState<AdminProfile[]>([]);
 
@@ -277,6 +270,11 @@ export default function Home() {
     setUsers(data);
   }, [apiRequest, userLimit, userSearch]);
 
+  const fetchOverviewUsers = useCallback(async () => {
+    const data = await apiRequest<UserRow[]>("/admin/users?limit=200");
+    setOverviewUsers(data);
+  }, [apiRequest]);
+
   const fetchPresentations = useCallback(async () => {
     const query = new URLSearchParams();
 
@@ -312,6 +310,7 @@ export default function Home() {
     const results = await Promise.allSettled([
       fetchMe(),
       fetchOverview(),
+      fetchOverviewUsers(),
       fetchUsers(),
       fetchPresentations(),
       fetchAdmins(),
@@ -326,7 +325,7 @@ export default function Home() {
     }
 
     setIsLoading(false);
-  }, [fetchAdmins, fetchMe, fetchOverview, fetchPresentations, fetchUsers, session?.accessToken]);
+  }, [fetchAdmins, fetchMe, fetchOverview, fetchOverviewUsers, fetchPresentations, fetchUsers, session?.accessToken]);
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -388,6 +387,37 @@ export default function Home() {
   }, [isHydrated, pathname, router, session?.accessToken]);
 
   const pendingPresentations = presentations.filter((item) => item.status === "pending");
+
+  const generatedUsersCount = useMemo(
+    () => overviewUsers.filter((user) => user.totalGenerations > 0).length,
+    [overviewUsers]
+  );
+
+  const userLifecycleStats = useMemo(
+    () => [
+      {
+        label: "Started only",
+        value: Math.max((overview?.totalUsers ?? 0) - (overview?.registeredUsers ?? 0), 0),
+        colorClass: "bg-sky-400/90",
+      },
+      {
+        label: "Registered, no generation",
+        value: Math.max((overview?.registeredUsers ?? 0) - generatedUsersCount, 0),
+        colorClass: "bg-amber-400/90",
+      },
+      {
+        label: "Registered and generated",
+        value: generatedUsersCount,
+        colorClass: "bg-emerald-400/90",
+      },
+    ],
+    [generatedUsersCount, overview?.registeredUsers, overview?.totalUsers]
+  );
+
+  const userLifecycleTotal = useMemo(
+    () => userLifecycleStats.reduce((sum, item) => sum + item.value, 0),
+    [userLifecycleStats]
+  );
 
   const activeSection = useMemo<SectionKey>(() => {
     if (pathname.startsWith("/users")) {
@@ -536,6 +566,7 @@ export default function Home() {
     setProfile(null);
     setOverview(null);
     setUsers([]);
+    setOverviewUsers([]);
     setPresentations([]);
     setAdmins([]);
     setAdminsError(null);
@@ -802,12 +833,12 @@ export default function Home() {
 
                         <BentoCard
                           title="Statistics"
-                          description="Prepared backend metrics from GET /admin/overview"
-                          className="surface-glass order-1 row-span-2 md:col-span-4"
+                          description=""
+                          className="surface-glass order-1 md:col-span-4"
                           as="div"
                         >
                           <div className="space-y-3">
-                            <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                            <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3 transition-colors duration-300 hover:border-[var(--accent)]">
                               <div className="flex items-center justify-between gap-2">
                                 <p className="text-xs text-muted">Job composition</p>
                                 <p className="text-sm font-semibold text-main">
@@ -843,65 +874,38 @@ export default function Home() {
                               </div>
                             </div>
 
-                            <div className="grid grid-cols-2 gap-2">
-                              <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-2 text-center">
-                                <AnimatedCircularProgressBar
-                                  className="mx-auto size-20 text-sm text-main"
-                                  value={clampNumber(overview?.statistics.registrationRate ?? 0, 0, 100)}
-                                  gaugePrimaryColor="rgb(14 165 233)"
-                                  gaugeSecondaryColor="rgba(148,163,184,0.28)"
-                                />
-                                <p className="mt-1 text-[0.7rem] text-muted">Registration</p>
-                              </div>
-
-                              <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-2 text-center">
-                                <AnimatedCircularProgressBar
-                                  className="mx-auto size-20 text-sm text-main"
-                                  value={clampNumber(overview?.statistics.completionRate ?? 0, 0, 100)}
-                                  gaugePrimaryColor="rgb(16 185 129)"
-                                  gaugeSecondaryColor="rgba(148,163,184,0.28)"
-                                />
-                                <p className="mt-1 text-[0.7rem] text-muted">Completion</p>
-                              </div>
-
-                              <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-2 text-center">
-                                <AnimatedCircularProgressBar
-                                  className="mx-auto size-20 text-sm text-main"
-                                  value={clampNumber(overview?.statistics.pendingRate ?? 0, 0, 100)}
-                                  gaugePrimaryColor="rgb(245 158 11)"
-                                  gaugeSecondaryColor="rgba(148,163,184,0.28)"
-                                />
-                                <p className="mt-1 text-[0.7rem] text-muted">Pending</p>
-                              </div>
-
-                              <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-2 text-center">
-                                <AnimatedCircularProgressBar
-                                  className="mx-auto size-20 text-sm text-main"
-                                  value={clampNumber(overview?.statistics.failureRate ?? 0, 0, 100)}
-                                  gaugePrimaryColor="rgb(244 63 94)"
-                                  gaugeSecondaryColor="rgba(148,163,184,0.28)"
-                                />
-                                <p className="mt-1 text-[0.7rem] text-muted">Failure</p>
-                              </div>
-                            </div>
-
-                            <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                            <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3 transition-colors duration-300 hover:border-[var(--accent)]">
                               <div className="flex items-center justify-between gap-2">
-                                <p className="text-xs text-muted">Avg generations per active user (24h)</p>
+                                <p className="text-xs text-muted">User lifecycle</p>
                                 <p className="text-sm font-semibold text-main">
-                                  {formatDecimal(overview?.statistics.avgGenerationsPerActiveUser24h ?? 0)}
+                                  {formatNumber(userLifecycleTotal)} users
                                 </p>
                               </div>
 
-                              <div className="mt-2 h-2 overflow-hidden rounded-full border border-[var(--surface-border)] bg-[var(--surface-3)]">
-                                <div
-                                  className="h-full bg-sky-400/90 transition-all duration-700"
-                                  style={{
-                                    width: `${clampNumber((overview?.statistics.avgGenerationsPerActiveUser24h ?? 0) * 20, 0, 100)}%`,
-                                  }}
-                                />
+                              <div className="mt-3 flex h-3 overflow-hidden rounded-full border border-[var(--surface-border)] bg-[var(--surface-3)]">
+                                {userLifecycleStats.map((item) => (
+                                  <div
+                                    key={item.label}
+                                    className={cn("h-full transition-all duration-700", item.colorClass)}
+                                    style={{
+                                      width: `${userLifecycleTotal > 0 ? (item.value / userLifecycleTotal) * 100 : 0}%`,
+                                    }}
+                                  />
+                                ))}
                               </div>
-                              <p className="mt-1 text-[0.7rem] text-muted">Scale: 0 to 5+ generations</p>
+
+                              <div className="mt-2 grid gap-2 text-[0.72rem] text-muted sm:grid-cols-3">
+                                {userLifecycleStats.map((item) => (
+                                  <div key={item.label} className="flex items-center gap-2">
+                                    <span className={cn("inline-block size-2 rounded-full", item.colorClass)} />
+                                    <p>
+                                      {item.label}: {formatNumber(item.value)} ({formatPercent(
+                                        userLifecycleTotal > 0 ? (item.value / userLifecycleTotal) * 100 : 0
+                                      )})
+                                    </p>
+                                  </div>
+                                ))}
+                              </div>
                             </div>
                           </div>
                         </BentoCard>
