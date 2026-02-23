@@ -12,6 +12,7 @@ import {
   useState,
 } from "react";
 import {
+  Download,
   Eye,
   Loader2,
   LogOut,
@@ -85,6 +86,8 @@ interface PresentationMetadata {
   pageCount?: number;
   useImages?: boolean;
   fileName?: string;
+  storageKey?: string;
+  downloadUrl?: string;
 }
 
 interface PresentationRow {
@@ -2431,6 +2434,25 @@ export default function Home() {
                                                 </span>
                                               </button>
 
+                                              {item.metadata?.downloadUrl ? (
+                                                <a
+                                                  href={item.metadata.downloadUrl}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  aria-label={`Download presentation #${item.id}`}
+                                                  title="Download presentation"
+                                                  className="inline-flex size-7 items-center justify-center rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] text-main"
+                                                >
+                                                  <Download
+                                                    className="size-3.5"
+                                                    aria-hidden="true"
+                                                  />
+                                                  <span className="sr-only">
+                                                    Download presentation
+                                                  </span>
+                                                </a>
+                                              ) : null}
+
                                               {item.status === "pending" ? (
                                                 <button
                                                   type="button"
@@ -2923,6 +2945,21 @@ export default function Home() {
                         </p>
                         <p className="mt-1 break-all">
                           File: {selectedPresentation.metadata?.fileName ?? "-"}
+                        </p>
+                        <p className="mt-1 break-all">
+                          Download:{" "}
+                          {selectedPresentation.metadata?.downloadUrl ? (
+                            <a
+                              href={selectedPresentation.metadata.downloadUrl}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="font-semibold text-main underline"
+                            >
+                              Download PDF
+                            </a>
+                          ) : (
+                            "-"
+                          )}
                         </p>
                       </div>
                     </div>
