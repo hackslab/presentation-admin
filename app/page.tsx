@@ -14,11 +14,14 @@ import {
 import {
   Download,
   Eye,
+  KeyRound,
   Loader2,
   LogOut,
+  Pencil,
   RefreshCw,
   Save,
   Send,
+  Trash2,
   UserPlus,
   XCircle,
 } from "lucide-react";
@@ -343,6 +346,17 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function getPendingRecipientsCount(
+  recipients: number,
+  sent: number,
+  failed: number,
+): number {
+  return Math.max(
+    toNonNegative(recipients) - toNonNegative(sent) - toNonNegative(failed),
+    0,
+  );
+}
+
 function readFileAsDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -458,11 +472,34 @@ export default function Home() {
   const [adminUsername, setAdminUsername] = useState("");
   const [adminPassword, setAdminPassword] = useState("");
   const [adminRole, setAdminRole] = useState<AdminRole>("ADMIN");
+  const [isCreatingAdmin, setIsCreatingAdmin] = useState(false);
+  const [editingAdminId, setEditingAdminId] = useState<number | null>(null);
+  const [editingAdminName, setEditingAdminName] = useState("");
+  const [editingAdminUsername, setEditingAdminUsername] = useState("");
+  const [editingAdminPassword, setEditingAdminPassword] = useState("");
+  const [editingAdminRole, setEditingAdminRole] = useState<AdminRole>("ADMIN");
+  const [isUpdatingAdmin, setIsUpdatingAdmin] = useState(false);
+  const [deletingAdminId, setDeletingAdminId] = useState<number | null>(null);
+  const [adminPendingDelete, setAdminPendingDelete] =
+    useState<AdminProfile | null>(null);
+  const [adminPendingPasswordUpdate, setAdminPendingPasswordUpdate] =
+    useState<AdminProfile | null>(null);
+  const [adminPasswordUpdateInput, setAdminPasswordUpdateInput] = useState("");
+  const [updatingPasswordAdminId, setUpdatingPasswordAdminId] = useState<
+    number | null
+  >(null);
+  const [ownAdminName, setOwnAdminName] = useState("");
+  const [ownAdminUsername, setOwnAdminUsername] = useState("");
+  const [ownAdminPassword, setOwnAdminPassword] = useState("");
+  const [isUpdatingOwnAdmin, setIsUpdatingOwnAdmin] = useState(false);
 
   const usersRequestVersionRef = useRef(0);
   const presentationsRequestVersionRef = useRef(0);
   const lastDashboardPathRef = useRef<string | null>(null);
   const broadcastImageInputRef = useRef<HTMLInputElement | null>(null);
+
+  const currentAdminRole = profile?.role ?? session?.admin.role ?? null;
+  const isSuperAdmin = currentAdminRole === "SUPERADMIN";
 
   const apiRequest = useCallback(
     async <T,>(
@@ -479,7 +516,7 @@ export default function Home() {
 
       if (requiresAuth) {
         if (!session?.accessToken) {
-          throw new Error("Sign in first to access protected endpoints.");
+          throw new Error("Sign in first to access protected resources.");
         }
 
         headers.set("Authorization", `Bearer ${session.accessToken}`);
@@ -508,10 +545,24 @@ export default function Home() {
     [session?.accessToken],
   );
 
+  const syncAuthenticatedAdmin = useCallback((admin: AdminProfile) => {
+    setProfile(admin);
+    setSession((previous) => {
+      if (!previous) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        admin,
+      };
+    });
+  }, []);
+
   const fetchMe = useCallback(async () => {
     const data = await apiRequest<AdminProfile>("/admin/auth/me");
-    setProfile(data);
-  }, [apiRequest]);
+    syncAuthenticatedAdmin(data);
+  }, [apiRequest, syncAuthenticatedAdmin]);
 
   const fetchOverview = useCallback(async () => {
     const data = await apiRequest<OverviewResponse>("/admin/overview");
@@ -736,6 +787,12 @@ export default function Home() {
   }, [apiRequest]);
 
   const fetchAdmins = useCallback(async () => {
+    if (currentAdminRole !== "SUPERADMIN") {
+      setAdmins([]);
+      setIsAdminsLoading(false);
+      return;
+    }
+
     setIsAdminsLoading(true);
 
     try {
@@ -747,7 +804,7 @@ export default function Home() {
     } finally {
       setIsAdminsLoading(false);
     }
-  }, [apiRequest]);
+  }, [apiRequest, currentAdminRole]);
 
   const fetchBroadcastHistory = useCallback(async () => {
     setIsBroadcastHistoryLoading(true);
@@ -783,7 +840,9 @@ export default function Home() {
       presentationFetchTask,
       ...(pathname.startsWith("/settings") ? [fetchRuntimeSettings()] : []),
       ...(pathname.startsWith("/users") ? [fetchUsersCurrentPage()] : []),
-      ...(pathname.startsWith("/admins") ? [fetchAdmins()] : []),
+      ...(pathname.startsWith("/admins") && currentAdminRole === "SUPERADMIN"
+        ? [fetchAdmins()]
+        : []),
       ...(pathname.startsWith("/broadcast") ? [fetchBroadcastHistory()] : []),
     ]);
 
@@ -807,6 +866,7 @@ export default function Home() {
     fetchPresentationsFirstPage,
     fetchRuntimeSettings,
     fetchUsersCurrentPage,
+    currentAdminRole,
     session?.accessToken,
   ]);
 
@@ -875,6 +935,46 @@ export default function Home() {
   }, [selectedPresentation]);
 
   useEffect(() => {
+    if (!adminPendingDelete) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && deletingAdminId !== adminPendingDelete.id) {
+        setAdminPendingDelete(null);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [adminPendingDelete, deletingAdminId]);
+
+  useEffect(() => {
+    if (!adminPendingPasswordUpdate) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.key === "Escape" &&
+        updatingPasswordAdminId !== adminPendingPasswordUpdate.id
+      ) {
+        setAdminPendingPasswordUpdate(null);
+        setAdminPasswordUpdateInput("");
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [adminPendingPasswordUpdate, updatingPasswordAdminId]);
+
+  useEffect(() => {
     return () => {
       if (broadcastImagePreviewUrl) {
         URL.revokeObjectURL(broadcastImagePreviewUrl);
@@ -908,6 +1008,15 @@ export default function Home() {
 
     void refreshDashboard();
   }, [isHydrated, pathname, refreshDashboard, session?.accessToken]);
+
+  useEffect(() => {
+    if (!profile) {
+      return;
+    }
+
+    setOwnAdminName(profile.name);
+    setOwnAdminUsername(profile.username);
+  }, [profile]);
 
   useEffect(() => {
     if (session?.accessToken) {
@@ -1152,7 +1261,7 @@ export default function Home() {
         eyebrow: "User Intelligence",
         title: "User Directory",
         description:
-          "Search and audit user activity through the documented admin user endpoint.",
+          "Search and audit user activity through the admin user directory.",
       },
       presentations: {
         eyebrow: "Moderation",
@@ -1169,7 +1278,7 @@ export default function Home() {
         eyebrow: "Access Control",
         title: "Admin Management",
         description:
-          "Review admin roster and create new admin accounts based on role permissions.",
+          "SUPERADMIN can manage all admins, while ADMIN can update only their own profile and password.",
       },
     }),
     [],
@@ -1263,6 +1372,27 @@ export default function Home() {
     }
     setBroadcastImagePreviewUrl(null);
     setAdmins([]);
+    setIsAdminsLoading(true);
+    setAdminName("");
+    setAdminUsername("");
+    setAdminPassword("");
+    setAdminRole("ADMIN");
+    setIsCreatingAdmin(false);
+    setEditingAdminId(null);
+    setEditingAdminName("");
+    setEditingAdminUsername("");
+    setEditingAdminRole("ADMIN");
+    setEditingAdminPassword("");
+    setIsUpdatingAdmin(false);
+    setDeletingAdminId(null);
+    setAdminPendingDelete(null);
+    setAdminPendingPasswordUpdate(null);
+    setAdminPasswordUpdateInput("");
+    setUpdatingPasswordAdminId(null);
+    setOwnAdminName("");
+    setOwnAdminUsername("");
+    setOwnAdminPassword("");
+    setIsUpdatingOwnAdmin(false);
     setRuntimeSettings(null);
     setMainThemePromptCharacterLimitInput("");
     setFreePresentationGenerationLimitInput("");
@@ -1304,9 +1434,7 @@ export default function Home() {
     setBroadcastImageFile(null);
   };
 
-  const handleBroadcastImageChange = (
-    event: ChangeEvent<HTMLInputElement>,
-  ) => {
+  const handleBroadcastImageChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
 
     if (!file) {
@@ -1459,6 +1587,13 @@ export default function Home() {
   const handleCreateAdmin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
+    if (!isSuperAdmin) {
+      toast.error("Only SUPERADMIN can create admins.");
+      return;
+    }
+
+    setIsCreatingAdmin(true);
+
     try {
       await apiRequest<AdminProfile>(
         "/admin/admins",
@@ -1483,6 +1618,218 @@ export default function Home() {
       await fetchAdmins();
     } catch (error) {
       toast.error(toErrorMessage(error));
+    } finally {
+      setIsCreatingAdmin(false);
+    }
+  };
+
+  const startEditingAdmin = (admin: AdminProfile) => {
+    setEditingAdminId(admin.id);
+    setEditingAdminName(admin.name);
+    setEditingAdminUsername(admin.username);
+    setEditingAdminRole(admin.role);
+    setEditingAdminPassword("");
+  };
+
+  const clearEditingAdmin = () => {
+    setEditingAdminId(null);
+    setEditingAdminName("");
+    setEditingAdminUsername("");
+    setEditingAdminRole("ADMIN");
+    setEditingAdminPassword("");
+  };
+
+  const handleUpdateAdmin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!isSuperAdmin || editingAdminId === null) {
+      toast.error("Only SUPERADMIN can update other admins.");
+      return;
+    }
+
+    const payload: {
+      name: string;
+      username: string;
+      role: AdminRole;
+      password?: string;
+    } = {
+      name: editingAdminName,
+      username: editingAdminUsername,
+      role: editingAdminRole,
+    };
+
+    if (editingAdminPassword.trim()) {
+      payload.password = editingAdminPassword;
+    }
+
+    setIsUpdatingAdmin(true);
+
+    try {
+      const updatedAdmin = await apiRequest<AdminProfile>(
+        `/admin/admins/${editingAdminId}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        },
+      );
+
+      if (updatedAdmin.id === profile?.id) {
+        syncAuthenticatedAdmin(updatedAdmin);
+      }
+
+      toast.success("Admin updated.");
+      setEditingAdminPassword("");
+      await fetchAdmins();
+    } catch (error) {
+      toast.error(toErrorMessage(error));
+    } finally {
+      setIsUpdatingAdmin(false);
+    }
+  };
+
+  const handleUpdateAdminPassword = (admin: AdminProfile) => {
+    if (!isSuperAdmin) {
+      toast.error("Only SUPERADMIN can change other admin passwords.");
+      return;
+    }
+
+    setAdminPendingPasswordUpdate(admin);
+    setAdminPasswordUpdateInput("");
+  };
+
+  const closeUpdatePasswordDialog = () => {
+    if (updatingPasswordAdminId !== null) {
+      return;
+    }
+
+    setAdminPendingPasswordUpdate(null);
+    setAdminPasswordUpdateInput("");
+  };
+
+  const confirmUpdateAdminPassword = async () => {
+    if (!adminPendingPasswordUpdate) {
+      return;
+    }
+
+    const nextPassword = adminPasswordUpdateInput.trim();
+
+    setUpdatingPasswordAdminId(adminPendingPasswordUpdate.id);
+
+    try {
+      await apiRequest<AdminProfile>(
+        `/admin/admins/${adminPendingPasswordUpdate.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            password: nextPassword,
+          }),
+        },
+      );
+
+      toast.success(`Password updated for @${adminPendingPasswordUpdate.username}.`);
+      setAdminPendingPasswordUpdate(null);
+      setAdminPasswordUpdateInput("");
+    } catch (error) {
+      toast.error(toErrorMessage(error));
+    } finally {
+      setUpdatingPasswordAdminId(null);
+    }
+  };
+
+  const handleDeleteAdmin = (admin: AdminProfile) => {
+    if (!isSuperAdmin) {
+      toast.error("Only SUPERADMIN can delete admins.");
+      return;
+    }
+
+    if (admin.id === profile?.id) {
+      toast.error("You cannot delete your own account.");
+      return;
+    }
+
+    setAdminPendingDelete(admin);
+  };
+
+  const closeDeleteAdminDialog = () => {
+    if (deletingAdminId !== null) {
+      return;
+    }
+
+    setAdminPendingDelete(null);
+  };
+
+  const confirmDeleteAdmin = async () => {
+    if (!adminPendingDelete) {
+      return;
+    }
+
+    setDeletingAdminId(adminPendingDelete.id);
+
+    try {
+      await apiRequest<{ deleted: boolean; id: number }>(
+        `/admin/admins/${adminPendingDelete.id}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      if (editingAdminId === adminPendingDelete.id) {
+        clearEditingAdmin();
+      }
+
+      toast.success(`@${adminPendingDelete.username} deleted.`);
+      setAdminPendingDelete(null);
+      await fetchAdmins();
+    } catch (error) {
+      toast.error(toErrorMessage(error));
+    } finally {
+      setDeletingAdminId(null);
+    }
+  };
+
+  const handleUpdateOwnAdmin = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+
+    if (!profile) {
+      toast.error("Admin profile is not available.");
+      return;
+    }
+
+    const payload: {
+      name: string;
+      username: string;
+      password?: string;
+    } = {
+      name: ownAdminName,
+      username: ownAdminUsername,
+    };
+
+    if (ownAdminPassword.trim()) {
+      payload.password = ownAdminPassword;
+    }
+
+    setIsUpdatingOwnAdmin(true);
+
+    try {
+      const updatedAdmin = await apiRequest<AdminProfile>(
+        `/admin/admins/${profile.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(payload),
+        },
+      );
+
+      syncAuthenticatedAdmin(updatedAdmin);
+      setOwnAdminPassword("");
+      toast.success("Your admin profile was updated.");
+
+      if (isSuperAdmin) {
+        await fetchAdmins();
+      }
+    } catch (error) {
+      toast.error(toErrorMessage(error));
+    } finally {
+      setIsUpdatingOwnAdmin(false);
     }
   };
 
@@ -1516,7 +1863,7 @@ export default function Home() {
                   Axiom Admin
                 </h1>
                 <p className="mt-2 text-xs text-muted">
-                  Operating on the documented endpoints with real-time controls.
+                  Operating with real-time controls.
                 </p>
               </div>
 
@@ -2436,7 +2783,9 @@ export default function Home() {
 
                                               {item.metadata?.downloadUrl ? (
                                                 <a
-                                                  href={item.metadata.downloadUrl}
+                                                  href={
+                                                    item.metadata.downloadUrl
+                                                  }
                                                   target="_blank"
                                                   rel="noopener noreferrer"
                                                   aria-label={`Download presentation #${item.id}`}
@@ -2581,7 +2930,8 @@ export default function Home() {
                                   </label>
                                 </div>
 
-                                {broadcastImageFile && broadcastImagePreviewUrl ? (
+                                {broadcastImageFile &&
+                                broadcastImagePreviewUrl ? (
                                   <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] p-3">
                                     <div className="flex items-start justify-between gap-3">
                                       <div>
@@ -2589,9 +2939,9 @@ export default function Home() {
                                           {broadcastImageFile.name}
                                         </p>
                                         <p className="text-xs text-muted">
-                                          {(broadcastImageFile.size / 1024).toFixed(
-                                            1,
-                                          )}{" "}
+                                          {(
+                                            broadcastImageFile.size / 1024
+                                          ).toFixed(1)}{" "}
                                           KB
                                         </p>
                                       </div>
@@ -2636,29 +2986,41 @@ export default function Home() {
                                   </button>
                                 </div>
                               </form>
-
-                              {broadcastResult ? (
-                                <div className="mt-4 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] p-3 text-sm text-main">
-                                  Recipients:{" "}
-                                  <span className="font-semibold">
-                                    {broadcastResult.recipients}
-                                  </span>
-                                  , sent:{" "}
-                                  <span className="font-semibold">
-                                    {broadcastResult.sent}
-                                  </span>
-                                  , failed:{" "}
-                                  <span className="font-semibold">
-                                    {broadcastResult.failed}
-                                  </span>
-                                </div>
-                              ) : null}
                             </div>
 
                             <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-4">
-                              <p className="text-xs font-semibold tracking-wide text-main uppercase">
-                                Broadcasted messages
-                              </p>
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs font-semibold tracking-wide text-main uppercase">
+                                  Broadcasted messages
+                                </p>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void fetchBroadcastHistory();
+                                  }}
+                                  disabled={
+                                    !session || isBroadcastHistoryLoading
+                                  }
+                                  aria-label="Reload broadcast messages"
+                                  title="Reload broadcast messages"
+                                  className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] text-main transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {isBroadcastHistoryLoading ? (
+                                    <Loader2
+                                      className="size-4 animate-spin"
+                                      aria-hidden="true"
+                                    />
+                                  ) : (
+                                    <RefreshCw
+                                      className="size-4"
+                                      aria-hidden="true"
+                                    />
+                                  )}
+                                  <span className="sr-only">
+                                    Reload broadcast messages
+                                  </span>
+                                </button>
+                              </div>
 
                               <div className="mt-3 max-h-[30rem] space-y-3 overflow-y-auto pr-1">
                                 {isBroadcastHistoryLoading ? (
@@ -2690,7 +3052,8 @@ export default function Home() {
                                           by{" "}
                                           {item.adminUsername
                                             ? `@${item.adminUsername}`
-                                            : item.adminName ?? "Unknown admin"}
+                                            : (item.adminName ??
+                                              "Unknown admin")}
                                         </p>
                                       </div>
 
@@ -2711,8 +3074,14 @@ export default function Home() {
                                       ) : null}
 
                                       <p className="mt-3 text-xs text-muted">
-                                        Recipients: {item.recipients}, sent: {" "}
-                                        {item.sent}, failed: {item.failed}
+                                        Recipients: {item.recipients}, sent:{" "}
+                                        {item.sent}, failed: {item.failed},
+                                        pending:{" "}
+                                        {getPendingRecipientsCount(
+                                          item.recipients,
+                                          item.sent,
+                                          item.failed,
+                                        )}
                                       </p>
                                     </article>
                                   ))
@@ -2731,69 +3100,161 @@ export default function Home() {
                             Admins
                           </h3>
                           <p className="text-sm text-muted">
-                            GET /admin/admins, POST /admin/admins (SUPERADMIN
-                            only)
+                            {isSuperAdmin
+                              ? "GET /admin/admins, POST /admin/admins, PATCH /admin/admins/:id, DELETE /admin/admins/:id"
+                              : "PATCH /admin/admins/:id (own account only)"}
                           </p>
 
-                          <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                            <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
-                              <p className="text-xs font-semibold tracking-wide text-main uppercase">
-                                Admin list
-                              </p>
-                              <div className="mt-3 space-y-2">
-                                {showAdminsSkeleton ? (
-                                  Array.from({ length: 3 }).map((_, index) => (
-                                    <div
-                                      key={`admins-skeleton-${index}`}
-                                      className="flex items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2"
-                                    >
-                                      <div>
+                          {isSuperAdmin ? (
+                            <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                              <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                                <p className="text-xs font-semibold tracking-wide text-main uppercase">
+                                  Admin list
+                                </p>
+                                <div className="mt-3 space-y-2">
+                                  {showAdminsSkeleton ? (
+                                    Array.from({ length: 3 }).map((_, index) => (
+                                      <div
+                                        key={`admins-skeleton-${index}`}
+                                        className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2"
+                                      >
                                         <SkeletonBlock className="h-4 w-28" />
                                         <SkeletonBlock className="mt-2 h-3 w-20" />
                                       </div>
-                                      <SkeletonBlock className="h-6 w-20 rounded-full" />
-                                    </div>
-                                  ))
-                                ) : admins.length === 0 ? (
-                                  <p className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-muted">
-                                    No admins found.
-                                  </p>
-                                ) : (
-                                  admins.map((admin) => (
-                                    <div
-                                      key={admin.id}
-                                      className="flex items-center justify-between rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2"
-                                    >
-                                      <div>
-                                        <p className="text-sm font-medium text-main">
-                                          {admin.name}
-                                        </p>
-                                        <p className="text-xs text-muted">
-                                          @{admin.username}
-                                        </p>
-                                      </div>
-                                      <span className="rounded-full border border-[var(--surface-border)] bg-[var(--surface-3)] px-2 py-1 text-xs font-semibold text-main">
-                                        {admin.role}
-                                      </span>
-                                    </div>
-                                  ))
-                                )}
-                              </div>
-                            </div>
+                                    ))
+                                  ) : admins.length === 0 ? (
+                                    <p className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-muted">
+                                      No admins found.
+                                    </p>
+                                  ) : (
+                                    admins.map((admin) => {
+                                      const isSelfAdmin = admin.id === profile?.id;
 
-                            <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
-                              <p className="text-xs font-semibold tracking-wide text-main uppercase">
-                                Create admin
-                              </p>
-                              {profile?.role === "SUPERADMIN" ? (
+                                      return (
+                                        <div
+                                          key={admin.id}
+                                          className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2"
+                                        >
+                                          <div className="flex items-start justify-between gap-2">
+                                            <div>
+                                              <p className="text-sm font-medium text-main">
+                                                {admin.name}
+                                              </p>
+                                              <p className="text-xs text-muted">
+                                                @{admin.username}
+                                              </p>
+                                            </div>
+
+                                            <span className="rounded-full border border-[var(--surface-border)] bg-[var(--surface-3)] px-2 py-1 text-xs font-semibold text-main">
+                                              {admin.role}
+                                            </span>
+                                          </div>
+
+                                          <div className="mt-2 flex flex-wrap gap-2">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                startEditingAdmin(admin);
+                                              }}
+                                              aria-label={`Edit @${admin.username}`}
+                                              title={`Edit @${admin.username}`}
+                                              className="inline-flex items-center gap-1 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] px-2 py-1 text-xs text-main"
+                                            >
+                                              <Pencil className="size-3" aria-hidden="true" />
+                                              Edit
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                handleUpdateAdminPassword(admin);
+                                              }}
+                                              disabled={
+                                                updatingPasswordAdminId === admin.id
+                                              }
+                                              aria-label={`Update password for @${admin.username}`}
+                                              title={`Update password for @${admin.username}`}
+                                              className="inline-flex items-center gap-1 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] px-2 py-1 text-xs text-main disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                              {updatingPasswordAdminId ===
+                                              admin.id ? (
+                                                <Loader2
+                                                  className="size-3 animate-spin"
+                                                  aria-hidden="true"
+                                                />
+                                              ) : (
+                                                <KeyRound
+                                                  className="size-3"
+                                                  aria-hidden="true"
+                                                />
+                                              )}
+                                              Password
+                                            </button>
+
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                handleDeleteAdmin(admin);
+                                              }}
+                                              disabled={
+                                                deletingAdminId === admin.id ||
+                                                isSelfAdmin
+                                              }
+                                              aria-label={`Delete @${admin.username}`}
+                                              title={
+                                                isSelfAdmin
+                                                  ? "You cannot delete your own account"
+                                                  : `Delete @${admin.username}`
+                                              }
+                                              className="inline-flex items-center gap-1 rounded-lg border border-rose-400/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-300 disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                              {deletingAdminId === admin.id ? (
+                                                <Loader2
+                                                  className="size-3 animate-spin"
+                                                  aria-hidden="true"
+                                                />
+                                              ) : (
+                                                <Trash2
+                                                  className="size-3"
+                                                  aria-hidden="true"
+                                                />
+                                              )}
+                                              Delete
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                                <p className="text-xs font-semibold tracking-wide text-main uppercase">
+                                  {editingAdminId === null ? "Create admin" : "Edit admin"}
+                                </p>
+
                                 <form
                                   className="mt-3 grid gap-2 sm:grid-cols-2"
-                                  onSubmit={handleCreateAdmin}
+                                  onSubmit={
+                                    editingAdminId === null
+                                      ? handleCreateAdmin
+                                      : handleUpdateAdmin
+                                  }
                                 >
                                   <input
-                                    value={adminName}
+                                    value={
+                                      editingAdminId === null
+                                        ? adminName
+                                        : editingAdminName
+                                    }
                                     onChange={(event) => {
-                                      setAdminName(event.target.value);
+                                      if (editingAdminId === null) {
+                                        setAdminName(event.target.value);
+                                        return;
+                                      }
+
+                                      setEditingAdminName(event.target.value);
                                     }}
                                     placeholder="Name"
                                     className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
@@ -2801,9 +3262,18 @@ export default function Home() {
                                   />
 
                                   <input
-                                    value={adminUsername}
+                                    value={
+                                      editingAdminId === null
+                                        ? adminUsername
+                                        : editingAdminUsername
+                                    }
                                     onChange={(event) => {
-                                      setAdminUsername(event.target.value);
+                                      if (editingAdminId === null) {
+                                        setAdminUsername(event.target.value);
+                                        return;
+                                      }
+
+                                      setEditingAdminUsername(event.target.value);
                                     }}
                                     placeholder="Username"
                                     className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
@@ -2811,20 +3281,42 @@ export default function Home() {
                                   />
 
                                   <input
-                                    value={adminPassword}
+                                    value={
+                                      editingAdminId === null
+                                        ? adminPassword
+                                        : editingAdminPassword
+                                    }
                                     onChange={(event) => {
-                                      setAdminPassword(event.target.value);
+                                      if (editingAdminId === null) {
+                                        setAdminPassword(event.target.value);
+                                        return;
+                                      }
+
+                                      setEditingAdminPassword(event.target.value);
                                     }}
-                                    placeholder="Password"
+                                    placeholder={
+                                      editingAdminId === null
+                                        ? "Password"
+                                        : "New password (optional)"
+                                    }
                                     type="password"
                                     className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
-                                    required
+                                    required={editingAdminId === null}
                                   />
 
                                   <select
-                                    value={adminRole}
+                                    value={
+                                      editingAdminId === null
+                                        ? adminRole
+                                        : editingAdminRole
+                                    }
                                     onChange={(event) => {
-                                      setAdminRole(
+                                      if (editingAdminId === null) {
+                                        setAdminRole(event.target.value as AdminRole);
+                                        return;
+                                      }
+
+                                      setEditingAdminRole(
                                         event.target.value as AdminRole,
                                       );
                                     }}
@@ -2838,33 +3330,274 @@ export default function Home() {
 
                                   <button
                                     type="submit"
-                                    aria-label="Create admin"
-                                    title="Create admin"
+                                    disabled={isCreatingAdmin || isUpdatingAdmin}
+                                    aria-label={
+                                      editingAdminId === null
+                                        ? "Create admin"
+                                        : "Save admin"
+                                    }
+                                    title={
+                                      editingAdminId === null
+                                        ? "Create admin"
+                                        : "Save admin"
+                                    }
                                     className="sm:col-span-2 inline-flex items-center justify-center rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-main"
                                   >
-                                    <UserPlus
-                                      className="size-4"
-                                      aria-hidden="true"
-                                    />
+                                    {isCreatingAdmin || isUpdatingAdmin ? (
+                                      <Loader2
+                                        className="size-4 animate-spin"
+                                        aria-hidden="true"
+                                      />
+                                    ) : editingAdminId === null ? (
+                                      <UserPlus
+                                        className="size-4"
+                                        aria-hidden="true"
+                                      />
+                                    ) : (
+                                      <Save className="size-4" aria-hidden="true" />
+                                    )}
                                     <span className="sr-only">
-                                      Create admin
+                                      {editingAdminId === null
+                                        ? "Create admin"
+                                        : "Save admin"}
                                     </span>
                                   </button>
+
+                                  {editingAdminId !== null ? (
+                                    <button
+                                      type="button"
+                                      onClick={clearEditingAdmin}
+                                      className="sm:col-span-2 inline-flex items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-main"
+                                    >
+                                      Cancel editing
+                                    </button>
+                                  ) : null}
                                 </form>
-                              ) : (
-                                <p className="mt-3 text-sm text-muted">
-                                  Create/update/delete admin actions require
-                                  SUPERADMIN role.
-                                </p>
-                              )}
+                              </div>
                             </div>
-                          </div>
+                          ) : (
+                            <div className="mt-4 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                              <p className="text-xs font-semibold tracking-wide text-main uppercase">
+                                My admin profile
+                              </p>
+                              <p className="mt-2 text-xs text-muted">
+                                You can update your own name, username, and
+                                password. Role changes are restricted to
+                                SUPERADMIN.
+                              </p>
+
+                              <form
+                                className="mt-3 grid gap-2 sm:grid-cols-2"
+                                onSubmit={handleUpdateOwnAdmin}
+                              >
+                                <input
+                                  value={ownAdminName}
+                                  onChange={(event) => {
+                                    setOwnAdminName(event.target.value);
+                                  }}
+                                  placeholder="Name"
+                                  className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+                                  required
+                                />
+
+                                <input
+                                  value={ownAdminUsername}
+                                  onChange={(event) => {
+                                    setOwnAdminUsername(event.target.value);
+                                  }}
+                                  placeholder="Username"
+                                  className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+                                  required
+                                />
+
+                                <input
+                                  value={ownAdminPassword}
+                                  onChange={(event) => {
+                                    setOwnAdminPassword(event.target.value);
+                                  }}
+                                  placeholder="New password (optional)"
+                                  type="password"
+                                  className="sm:col-span-2 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+                                />
+
+                                <button
+                                  type="submit"
+                                  disabled={isUpdatingOwnAdmin}
+                                  className="sm:col-span-2 inline-flex items-center justify-center rounded-xl border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-2 text-main disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {isUpdatingOwnAdmin ? (
+                                    <Loader2
+                                      className="size-4 animate-spin"
+                                      aria-hidden="true"
+                                    />
+                                  ) : (
+                                    <Save className="size-4" aria-hidden="true" />
+                                  )}
+                                  <span className="sr-only">
+                                    Save my admin profile
+                                  </span>
+                                </button>
+                              </form>
+                            </div>
+                          )}
                         </article>
                       </section>
                     ) : null}
                   </div>
                 </>
               )}
+
+              {adminPendingPasswordUpdate ? (
+                <div
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
+                  onClick={closeUpdatePasswordDialog}
+                >
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={`Update password for @${adminPendingPasswordUpdate.username}`}
+                    className="surface-glass relative w-full max-w-md overflow-hidden rounded-2xl p-5"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                    }}
+                  >
+                    <ShineBorder
+                      borderWidth={1}
+                      duration={9}
+                      shineColor={[
+                        "rgba(56,189,248,0.52)",
+                        "rgba(14,165,233,0.3)",
+                      ]}
+                    />
+
+                    <p className="text-xs font-semibold tracking-[0.14em] uppercase text-muted">
+                      Secure action
+                    </p>
+                    <h4 className="mt-2 text-lg font-semibold text-main">
+                      Update password for @{adminPendingPasswordUpdate.username}
+                    </h4>
+                    <p className="mt-2 text-sm text-muted">
+                      Enter a new password.
+                    </p>
+
+                    <form
+                      className="mt-4 space-y-3"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void confirmUpdateAdminPassword();
+                      }}
+                    >
+                      <input
+                        value={adminPasswordUpdateInput}
+                        onChange={(event) => {
+                          setAdminPasswordUpdateInput(event.target.value);
+                        }}
+                        placeholder="New password"
+                        type="password"
+                        autoComplete="new-password"
+                        className="w-full rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
+                        required
+                      />
+
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={closeUpdatePasswordDialog}
+                          disabled={
+                            updatingPasswordAdminId ===
+                            adminPendingPasswordUpdate.id
+                          }
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <XCircle className="size-4" aria-hidden="true" />
+                          Cancel
+                        </button>
+
+                        <button
+                          type="submit"
+                          disabled={
+                            updatingPasswordAdminId ===
+                            adminPendingPasswordUpdate.id
+                          }
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-400/40 bg-sky-500/15 px-3 py-2 text-sm text-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {updatingPasswordAdminId ===
+                          adminPendingPasswordUpdate.id ? (
+                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                          ) : (
+                            <KeyRound className="size-4" aria-hidden="true" />
+                          )}
+                          Update
+                        </button>
+                      </div>
+                    </form>
+                  </div>
+                </div>
+              ) : null}
+
+              {adminPendingDelete ? (
+                <div
+                  className="fixed inset-0 z-50 flex items-center justify-center bg-black/55 p-4"
+                  onClick={closeDeleteAdminDialog}
+                >
+                  <div
+                    role="dialog"
+                    aria-modal="true"
+                    aria-label={`Delete @${adminPendingDelete.username}`}
+                    className="surface-glass relative w-full max-w-md overflow-hidden rounded-2xl p-5"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                    }}
+                  >
+                    <ShineBorder
+                      borderWidth={1}
+                      duration={9}
+                      shineColor={[
+                        "rgba(251,113,133,0.52)",
+                        "rgba(244,63,94,0.3)",
+                      ]}
+                    />
+
+                    <p className="text-xs font-semibold tracking-[0.14em] uppercase text-muted">
+                      Confirm action
+                    </p>
+                    <h4 className="mt-2 text-lg font-semibold text-main">
+                      Delete admin @{adminPendingDelete.username}?
+                    </h4>
+                    <p className="mt-2 text-sm text-muted">
+                      This action is permanent and cannot be undone.
+                    </p>
+
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <button
+                        type="button"
+                        onClick={closeDeleteAdminDialog}
+                        disabled={deletingAdminId === adminPendingDelete.id}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <XCircle className="size-4" aria-hidden="true" />
+                        Cancel
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void confirmDeleteAdmin();
+                        }}
+                        disabled={deletingAdminId === adminPendingDelete.id}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-400/40 bg-rose-500/15 px-3 py-2 text-sm text-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {deletingAdminId === adminPendingDelete.id ? (
+                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                        ) : (
+                          <Trash2 className="size-4" aria-hidden="true" />
+                        )}
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
 
               {selectedPresentation ? (
                 <div
