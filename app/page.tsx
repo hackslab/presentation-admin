@@ -3518,7 +3518,7 @@ export default function Home() {
                             updatingPasswordAdminId ===
                             adminPendingPasswordUpdate.id
                           }
-                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-sky-400/40 bg-sky-500/15 px-3 py-2 text-sm text-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+                          className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--info-btn-border)] bg-[var(--info-btn-bg-strong)] px-3 py-2 text-sm text-[var(--info-btn-text)] disabled:cursor-not-allowed disabled:opacity-60"
                         >
                           {updatingPasswordAdminId ===
                           adminPendingPasswordUpdate.id ? (
