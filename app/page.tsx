@@ -3205,7 +3205,7 @@ export default function Home() {
                                                   ? "You cannot delete your own account"
                                                   : `Delete @${admin.username}`
                                               }
-                                              className="inline-flex items-center gap-1 rounded-lg border border-rose-400/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-300 disabled:cursor-not-allowed disabled:opacity-60"
+                                              className="inline-flex items-center gap-1 rounded-lg border border-[var(--danger-btn-border)] bg-[var(--danger-btn-bg)] px-2 py-1 text-xs text-[var(--danger-btn-text)] disabled:cursor-not-allowed disabled:opacity-60"
                                             >
                                               {deletingAdminId === admin.id ? (
                                                 <Loader2
@@ -3584,7 +3584,7 @@ export default function Home() {
                           void confirmDeleteAdmin();
                         }}
                         disabled={deletingAdminId === adminPendingDelete.id}
-                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-rose-400/40 bg-rose-500/15 px-3 py-2 text-sm text-rose-200 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--danger-btn-border)] bg-[var(--danger-btn-bg-strong)] px-3 py-2 text-sm text-[var(--danger-btn-text)] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {deletingAdminId === adminPendingDelete.id ? (
                           <Loader2 className="size-4 animate-spin" aria-hidden="true" />

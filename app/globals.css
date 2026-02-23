@@ -23,6 +23,10 @@ pre {
   --surface-2: rgba(241, 246, 255, 0.9);
   --surface-3: rgba(255, 255, 255, 0.52);
   --surface-border: rgba(145, 158, 186, 0.35);
+  --danger-btn-border: rgba(244, 63, 94, 0.24);
+  --danger-btn-bg: rgba(244, 63, 94, 0.07);
+  --danger-btn-bg-strong: rgba(244, 63, 94, 0.1);
+  --danger-btn-text: #fb7185;
   --skeleton-fill: rgba(130, 151, 187, 0.34);
   --text-main: #10223d;
   --text-muted: #4a6287;
@@ -38,6 +42,10 @@ pre {
   --surface-2: rgba(12, 20, 33, 0.92);
   --surface-3: rgba(24, 37, 56, 0.6);
   --surface-border: rgba(88, 110, 143, 0.42);
+  --danger-btn-border: rgba(251, 113, 133, 0.4);
+  --danger-btn-bg: rgba(244, 63, 94, 0.1);
+  --danger-btn-bg-strong: rgba(244, 63, 94, 0.15);
+  --danger-btn-text: #fecdd3;
   --skeleton-fill: rgba(64, 88, 122, 0.62);
   --text-main: #dceafe;
   --text-muted: #97accd;
