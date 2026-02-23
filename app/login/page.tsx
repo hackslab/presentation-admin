@@ -30,7 +30,8 @@ interface ApiError {
   error?: string;
 }
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
 const API_PROXY_PREFIX = "/backend";
 const THEME_STORAGE_KEY = "axiom-admin-theme";
 const SESSION_STORAGE_KEY = "axiom-admin-session";
@@ -76,7 +77,12 @@ async function parseResponseBody<T>(response: Response): Promise<T> {
 }
 
 function resolveNextPath(value: string | null): string {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/login")) {
+  if (
+    !value ||
+    !value.startsWith("/") ||
+    value.startsWith("//") ||
+    value.startsWith("/login")
+  ) {
     return "/";
   }
 
@@ -100,7 +106,10 @@ function LoginPageContent() {
   const [password, setPassword] = useState("admin123");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const nextPath = useMemo(() => resolveNextPath(searchParams.get("next")), [searchParams]);
+  const nextPath = useMemo(
+    () => resolveNextPath(searchParams.get("next")),
+    [searchParams],
+  );
 
   useEffect(() => {
     const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -156,8 +165,13 @@ function LoginPageContent() {
       });
 
       if (!response.ok) {
-        const errorPayload = await parseResponseBody<unknown>(response).catch(() => null);
-        const errorMessage = parseApiError(errorPayload, `Login failed with ${response.status}`);
+        const errorPayload = await parseResponseBody<unknown>(response).catch(
+          () => null,
+        );
+        const errorMessage = parseApiError(
+          errorPayload,
+          `Login failed with ${response.status}`,
+        );
         throw new Error(errorMessage);
       }
 
@@ -190,8 +204,12 @@ function LoginPageContent() {
 
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-[0.67rem] font-semibold tracking-[0.2em] uppercase text-muted">MagicUI Console</p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-main">Axiom Admin Login</h1>
+              <p className="text-[0.67rem] font-semibold tracking-[0.2em] uppercase text-muted">
+                MagicUI Console
+              </p>
+              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-main">
+                Axiom Admin Login
+              </h1>
             </div>
 
             <AnimatedThemeToggler
@@ -202,7 +220,9 @@ function LoginPageContent() {
             />
           </div>
 
-          <p className="mt-3 text-sm text-muted">Use your admin credentials to access the dashboard.</p>
+          <p className="mt-3 text-sm text-muted">
+            Use your admin credentials to access the dashboard.
+          </p>
 
           <form className="mt-5 space-y-3" onSubmit={handleLogin}>
             <label className="grid gap-2 text-sm text-main">
@@ -246,14 +266,11 @@ function LoginPageContent() {
               ) : (
                 <LogIn className="size-4" aria-hidden="true" />
               )}
-              <span className="sr-only">{isSubmitting ? "Signing in" : "Sign in"}</span>
+              <span className="sr-only">
+                {isSubmitting ? "Signing in" : "Sign in"}
+              </span>
             </button>
           </form>
-
-          <div className="mt-4 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2">
-            <p className="text-[0.65rem] tracking-[0.16em] uppercase text-muted">Target API</p>
-            <p className="mt-1 break-all text-xs text-main">{API_BASE_URL}</p>
-          </div>
         </div>
       </div>
     </div>
