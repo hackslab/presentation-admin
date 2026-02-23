@@ -2599,8 +2599,8 @@ export default function Home() {
                                 Presentations
                               </h3>
                               <p className="text-sm text-muted">
-                                GET /admin/presentations + POST
-                                /admin/presentations/:id/fail
+                                Review presentation records and mark entries as
+                                failed when needed.
                               </p>
                             </div>
 
@@ -2886,8 +2886,7 @@ export default function Home() {
                             Broadcast
                           </h3>
                           <p className="text-sm text-muted">
-                            POST /admin/broadcast and GET /admin/broadcasts for
-                            delivery history
+                            Send broadcast messages and review delivery history.
                           </p>
 
                           <div className="mt-4 grid gap-4 xl:grid-cols-2">
@@ -3101,8 +3100,8 @@ export default function Home() {
                           </h3>
                           <p className="text-sm text-muted">
                             {isSuperAdmin
-                              ? "GET /admin/admins, POST /admin/admins, PATCH /admin/admins/:id, DELETE /admin/admins/:id"
-                              : "PATCH /admin/admins/:id (own account only)"}
+                              ? "Manage admin accounts, including creating, updating, and removing access."
+                              : "Manage your own account details."}
                           </p>
 
                           {isSuperAdmin ? (
