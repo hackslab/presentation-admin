@@ -33,8 +33,8 @@ interface ApiError {
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
 const API_PROXY_PREFIX = "/backend";
-const THEME_STORAGE_KEY = "axiom-admin-theme";
-const SESSION_STORAGE_KEY = "axiom-admin-session";
+const THEME_STORAGE_KEY = "admin-panel-theme";
+const SESSION_STORAGE_KEY = "admin-panel-session";
 
 function parseApiError(payload: unknown, fallback: string): string {
   if (!payload || typeof payload !== "object") {
@@ -204,11 +204,8 @@ function LoginPageContent() {
 
           <div className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-[0.67rem] font-semibold tracking-[0.2em] uppercase text-muted">
-                MagicUI Console
-              </p>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight text-main">
-                Axiom Admin Login
+              <h1 className="text-2xl font-semibold tracking-tight text-main">
+                Admin Panel Login
               </h1>
             </div>
 

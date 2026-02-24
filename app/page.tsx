@@ -29,6 +29,7 @@ import { toast } from "sonner";
 
 import { BentoCard, BentoGrid } from "@/components/ui/bento-grid";
 import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
+import { AvatarCircles } from "@/components/ui/avatar-circles";
 import { NumberTicker } from "@/components/ui/number-ticker";
 import { ShineBorder } from "@/components/ui/shine-border";
 import { cn } from "@/lib/utils";
@@ -74,8 +75,10 @@ interface OverviewResponse {
 interface UserRow {
   id: number;
   telegramId: string;
-  firstName: string;
+  firstName: string | null;
+  lastName: string | null;
   username: string | null;
+  profileImageUrl: string | null;
   phoneNumber: string | null;
   createdAt: string;
   totalGenerations: number;
@@ -129,6 +132,23 @@ interface RuntimeSettingsResponse {
   freePresentationGenerationLimit: number;
 }
 
+interface SyncUserProfileImagesResponse {
+  totalUsers: number;
+  processed: number;
+  profileFieldsUpdated: number;
+  updated: number;
+  unchanged: number;
+  removed: number;
+  noPhoto: number;
+  skippedRecentlyChecked: number;
+  skippedConfigMissing: number;
+  failed: number;
+  failures: Array<{
+    telegramId: string;
+    reason: string;
+  }>;
+}
+
 interface ConnectionPageInfo {
   hasNextPage: boolean;
   hasPreviousPage: boolean;
@@ -159,9 +179,9 @@ interface ApiError {
 }
 
 const API_PROXY_PREFIX = "/backend";
-const THEME_STORAGE_KEY = "axiom-admin-theme";
-const SESSION_STORAGE_KEY = "axiom-admin-session";
-const STATS_CACHE_STORAGE_KEY = "axiom-admin-stats-cache";
+const THEME_STORAGE_KEY = "admin-panel-theme";
+const SESSION_STORAGE_KEY = "admin-panel-session";
+const STATS_CACHE_STORAGE_KEY = "admin-panel-stats-cache";
 const MAIN_THEME_PROMPT_LIMIT_MIN = 10;
 const MAIN_THEME_PROMPT_LIMIT_MAX = 4096;
 const FREE_PRESENTATION_GENERATION_LIMIT_MIN = 1;
@@ -414,6 +434,8 @@ export default function Home() {
 
   const [isLoading, setIsLoading] = useState(false);
   const [isUsersLoading, setIsUsersLoading] = useState(true);
+  const [isSyncingUserProfileImages, setIsSyncingUserProfileImages] =
+    useState(false);
   const [isPresentationsLoading, setIsPresentationsLoading] = useState(true);
   const [isSettingsLoading, setIsSettingsLoading] = useState(true);
   const [isAdminsLoading, setIsAdminsLoading] = useState(true);
@@ -1354,6 +1376,7 @@ export default function Home() {
     setUsersPage(1);
     setUsersAfterHistory([null]);
     setUsersPageInfo(EMPTY_CONNECTION_PAGE_INFO);
+    setIsSyncingUserProfileImages(false);
     setOverviewUsers([]);
     setHasLoadedOverviewUsers(false);
     setPresentations([]);
@@ -1418,6 +1441,29 @@ export default function Home() {
       await fetchOverview();
     } catch (error) {
       toast.error(toErrorMessage(error));
+    }
+  };
+
+  const handleSyncAllUserProfileImages = async () => {
+    setIsSyncingUserProfileImages(true);
+
+    try {
+      const result = await apiRequest<SyncUserProfileImagesResponse>(
+        "/admin/users/profile-images/sync",
+        {
+          method: "POST",
+        },
+      );
+
+      toast.success(
+        `Profile sync done. Profile fields updated: ${result.profileFieldsUpdated}, image updated: ${result.updated}, unchanged: ${result.unchanged}, removed: ${result.removed}, no photo: ${result.noPhoto}, failed: ${result.failed}.`,
+      );
+
+      await fetchUsersCurrentPage();
+    } catch (error) {
+      toast.error(toErrorMessage(error));
+    } finally {
+      setIsSyncingUserProfileImages(false);
     }
   };
 
@@ -1726,7 +1772,9 @@ export default function Home() {
         },
       );
 
-      toast.success(`Password updated for @${adminPendingPasswordUpdate.username}.`);
+      toast.success(
+        `Password updated for @${adminPendingPasswordUpdate.username}.`,
+      );
       setAdminPendingPasswordUpdate(null);
       setAdminPasswordUpdateInput("");
     } catch (error) {
@@ -1856,11 +1904,8 @@ export default function Home() {
                     "rgba(249,115,22,0.55)",
                   ]}
                 />
-                <p className="text-[0.67rem] font-semibold tracking-[0.2em] uppercase text-muted">
-                  MagicUI Console
-                </p>
-                <h1 className="mt-2 text-xl font-semibold tracking-tight text-main">
-                  Axiom Admin
+                <h1 className="text-xl font-semibold tracking-tight text-main">
+                  Admin Panel
                 </h1>
                 <p className="mt-2 text-xs text-muted">
                   Operating with real-time controls.
@@ -2434,7 +2479,7 @@ export default function Home() {
                                 onChange={(event) => {
                                   setUserSearch(event.target.value);
                                 }}
-                                placeholder="Search username, first name..."
+                                placeholder="Search username, name, surname..."
                                 className="w-48 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
                               />
                               <input
@@ -2471,6 +2516,28 @@ export default function Home() {
                                   />
                                 )}
                                 <span className="sr-only">Reload users</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void handleSyncAllUserProfileImages();
+                                }}
+                                disabled={isSyncingUserProfileImages}
+                                className="inline-flex items-center gap-2 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-xs font-medium text-main disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {isSyncingUserProfileImages ? (
+                                  <Loader2
+                                    className="size-3.5 animate-spin"
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <RefreshCw
+                                    className="size-3.5"
+                                    aria-hidden="true"
+                                  />
+                                )}
+                                Sync profiles
                               </button>
                             </div>
                           </div>
@@ -2515,23 +2582,57 @@ export default function Home() {
                                         className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
                                       >
                                         <td className="px-3 py-2 text-main">
-                                          <p className="font-medium">
-                                            {user.firstName}
-                                          </p>
-                                          <p className="text-xs text-muted">
-                                            {user.username ? (
-                                              <a
-                                                href={`https://${user.username}.t.me`}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="underline decoration-transparent transition hover:decoration-current"
-                                              >
-                                                @{user.username}
-                                              </a>
+                                          <div className="flex items-center gap-2">
+                                            {user.profileImageUrl ? (
+                                              <AvatarCircles
+                                                avatarUrls={[
+                                                  {
+                                                    imageUrl:
+                                                      user.profileImageUrl,
+                                                    profileUrl: user.username
+                                                      ? `https://t.me/${user.username}`
+                                                      : undefined,
+                                                    alt: user.firstName
+                                                      ? `${user.firstName} profile photo`
+                                                      : "User profile photo",
+                                                  },
+                                                ]}
+                                              />
                                             ) : (
-                                              "@no_username"
+                                              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--surface-border)] bg-[var(--surface-2)] text-[0.65rem] font-semibold text-muted">
+                                                {(
+                                                  user.firstName?.[0] ??
+                                                  user.lastName?.[0] ??
+                                                  "?"
+                                                ).toUpperCase()}
+                                              </span>
                                             )}
-                                          </p>
+
+                                            <div>
+                                              <p className="font-medium">
+                                                {[
+                                                  user.firstName,
+                                                  user.lastName,
+                                                ]
+                                                  .filter(Boolean)
+                                                  .join(" ") || "Unknown user"}
+                                              </p>
+                                              <p className="text-xs text-muted">
+                                                {user.username ? (
+                                                  <a
+                                                    href={`https://t.me/${user.username}`}
+                                                    target="_blank"
+                                                    rel="noreferrer"
+                                                    className="underline decoration-transparent transition hover:decoration-current"
+                                                  >
+                                                    @{user.username}
+                                                  </a>
+                                                ) : (
+                                                  "@no_username"
+                                                )}
+                                              </p>
+                                            </div>
+                                          </div>
                                         </td>
                                         <td className="px-3 py-2 text-main">
                                           {user.telegramId}
@@ -3112,22 +3213,25 @@ export default function Home() {
                                 </p>
                                 <div className="mt-3 space-y-2">
                                   {showAdminsSkeleton ? (
-                                    Array.from({ length: 3 }).map((_, index) => (
-                                      <div
-                                        key={`admins-skeleton-${index}`}
-                                        className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2"
-                                      >
-                                        <SkeletonBlock className="h-4 w-28" />
-                                        <SkeletonBlock className="mt-2 h-3 w-20" />
-                                      </div>
-                                    ))
+                                    Array.from({ length: 3 }).map(
+                                      (_, index) => (
+                                        <div
+                                          key={`admins-skeleton-${index}`}
+                                          className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2"
+                                        >
+                                          <SkeletonBlock className="h-4 w-28" />
+                                          <SkeletonBlock className="mt-2 h-3 w-20" />
+                                        </div>
+                                      ),
+                                    )
                                   ) : admins.length === 0 ? (
                                     <p className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-muted">
                                       No admins found.
                                     </p>
                                   ) : (
                                     admins.map((admin) => {
-                                      const isSelfAdmin = admin.id === profile?.id;
+                                      const isSelfAdmin =
+                                        admin.id === profile?.id;
 
                                       return (
                                         <div
@@ -3159,17 +3263,23 @@ export default function Home() {
                                               title={`Edit @${admin.username}`}
                                               className="inline-flex items-center gap-1 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] px-2 py-1 text-xs text-main"
                                             >
-                                              <Pencil className="size-3" aria-hidden="true" />
+                                              <Pencil
+                                                className="size-3"
+                                                aria-hidden="true"
+                                              />
                                               Edit
                                             </button>
 
                                             <button
                                               type="button"
                                               onClick={() => {
-                                                handleUpdateAdminPassword(admin);
+                                                handleUpdateAdminPassword(
+                                                  admin,
+                                                );
                                               }}
                                               disabled={
-                                                updatingPasswordAdminId === admin.id
+                                                updatingPasswordAdminId ===
+                                                admin.id
                                               }
                                               aria-label={`Update password for @${admin.username}`}
                                               title={`Update password for @${admin.username}`}
@@ -3230,7 +3340,9 @@ export default function Home() {
 
                               <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
                                 <p className="text-xs font-semibold tracking-wide text-main uppercase">
-                                  {editingAdminId === null ? "Create admin" : "Edit admin"}
+                                  {editingAdminId === null
+                                    ? "Create admin"
+                                    : "Edit admin"}
                                 </p>
 
                                 <form
@@ -3272,7 +3384,9 @@ export default function Home() {
                                         return;
                                       }
 
-                                      setEditingAdminUsername(event.target.value);
+                                      setEditingAdminUsername(
+                                        event.target.value,
+                                      );
                                     }}
                                     placeholder="Username"
                                     className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
@@ -3291,7 +3405,9 @@ export default function Home() {
                                         return;
                                       }
 
-                                      setEditingAdminPassword(event.target.value);
+                                      setEditingAdminPassword(
+                                        event.target.value,
+                                      );
                                     }}
                                     placeholder={
                                       editingAdminId === null
@@ -3311,7 +3427,9 @@ export default function Home() {
                                     }
                                     onChange={(event) => {
                                       if (editingAdminId === null) {
-                                        setAdminRole(event.target.value as AdminRole);
+                                        setAdminRole(
+                                          event.target.value as AdminRole,
+                                        );
                                         return;
                                       }
 
@@ -3329,7 +3447,9 @@ export default function Home() {
 
                                   <button
                                     type="submit"
-                                    disabled={isCreatingAdmin || isUpdatingAdmin}
+                                    disabled={
+                                      isCreatingAdmin || isUpdatingAdmin
+                                    }
                                     aria-label={
                                       editingAdminId === null
                                         ? "Create admin"
@@ -3353,7 +3473,10 @@ export default function Home() {
                                         aria-hidden="true"
                                       />
                                     ) : (
-                                      <Save className="size-4" aria-hidden="true" />
+                                      <Save
+                                        className="size-4"
+                                        aria-hidden="true"
+                                      />
                                     )}
                                     <span className="sr-only">
                                       {editingAdminId === null
@@ -3430,7 +3553,10 @@ export default function Home() {
                                       aria-hidden="true"
                                     />
                                   ) : (
-                                    <Save className="size-4" aria-hidden="true" />
+                                    <Save
+                                      className="size-4"
+                                      aria-hidden="true"
+                                    />
                                   )}
                                   <span className="sr-only">
                                     Save my admin profile
@@ -3522,7 +3648,10 @@ export default function Home() {
                         >
                           {updatingPasswordAdminId ===
                           adminPendingPasswordUpdate.id ? (
-                            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                            <Loader2
+                              className="size-4 animate-spin"
+                              aria-hidden="true"
+                            />
                           ) : (
                             <KeyRound className="size-4" aria-hidden="true" />
                           )}
@@ -3587,7 +3716,10 @@ export default function Home() {
                         className="inline-flex items-center justify-center gap-2 rounded-xl border border-[var(--danger-btn-border)] bg-[var(--danger-btn-bg-strong)] px-3 py-2 text-sm text-[var(--danger-btn-text)] disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {deletingAdminId === adminPendingDelete.id ? (
-                          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                          <Loader2
+                            className="size-4 animate-spin"
+                            aria-hidden="true"
+                          />
                         ) : (
                           <Trash2 className="size-4" aria-hidden="true" />
                         )}

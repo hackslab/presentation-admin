@@ -3,7 +3,7 @@ import "./globals.css";
 import { AppToaster } from "@/components/ui/app-toaster";
 
 export const metadata: Metadata = {
-  title: "Axiom Admin Panel",
+  title: "Admin Panel",
   description: "Creative MagicUI admin dashboard",
 };
 
