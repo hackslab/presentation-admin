@@ -603,13 +603,20 @@ Request body:
 
 ```json
 {
-  "message": "Hello everyone! New templates are now available."
+  "message": "Hello everyone! New templates are now available.",
+  "imageDataUrl": "data:image/png;base64,iVBORw0KGgo...",
+  "imageFileName": "promo.png"
 }
 ```
 
 Validation rules:
 
 - `message`: required, max 4096 chars
+- `imageDataUrl`: optional, valid base64 data URL (`image/jpeg`, `image/png`, `image/webp`, `image/gif`), max 5 MB decoded image size
+- `imageFileName`: optional, sanitized server-side and normalized with an image extension
+- HTTP payload limit defaults to `8mb` and can be changed via `HTTP_REQUEST_BODY_LIMIT`
+- Telegram formatting shortcuts are supported in `message`: `**bold**`, `__italic__`, `~~strike~~`, `` `code` ``, `[link](https://...)`, `||spoiler||`
+- Link URLs inside markdown links must start with `http://` or `https://`
 
 Example request:
 

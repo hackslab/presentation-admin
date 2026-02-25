@@ -12,9 +12,14 @@ import {
   useState,
 } from "react";
 import {
+  Bold,
+  Code2,
   Download,
   Eye,
+  EyeOff,
+  Italic,
   KeyRound,
+  Link2,
   Loader2,
   LogOut,
   Pencil,
@@ -38,6 +43,10 @@ type ThemeMode = "light" | "dark";
 type AdminRole = "ADMIN" | "SUPERADMIN";
 type PresentationStatus = "pending" | "completed" | "failed";
 type PresentationStatusFilter = PresentationStatus | "all";
+type SortOrder = "asc" | "desc";
+type UserRegistrationFilter = "all" | "registered" | "unregistered";
+type PresentationLanguageFilter = "all" | "uz" | "ru" | "en";
+type JoinedUsersRange = "90d" | "60d" | "30d" | "15d" | "7d" | "1d";
 
 interface AdminProfile {
   id: number;
@@ -132,7 +141,21 @@ interface RuntimeSettingsResponse {
   freePresentationGenerationLimit: number;
   geminiModel: string;
   geminiImageModel: string;
+  geminiModelSuggestions: string[];
+  geminiImageModelSuggestions: string[];
 }
+
+interface SystemPromptResponse {
+  id: number;
+  key: string;
+  title: string;
+  description: string;
+  content: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+type RuntimeModelField = "geminiModel" | "geminiImageModel";
 
 type UserProfileSyncJobStatus = "queued" | "running" | "completed" | "failed";
 
@@ -181,6 +204,23 @@ interface UsersConnectionResponse extends ConnectionResponse<UserRow> {
   search: string | null;
 }
 
+interface UserJoinedDateRow {
+  createdAt: string;
+}
+
+interface DailyJoinedUsersPoint {
+  dateKey: string;
+  label: string;
+  count: number;
+}
+
+interface DailyJoinedUsersBarPoint extends DailyJoinedUsersPoint {
+  x: number;
+  y: number;
+  barWidth: number;
+  barHeight: number;
+}
+
 interface ApiError {
   message?: string | string[];
   error?: string;
@@ -197,6 +237,25 @@ const FREE_PRESENTATION_GENERATION_LIMIT_MIN = 1;
 const FREE_PRESENTATION_GENERATION_LIMIT_MAX = 100;
 const RUNTIME_MODEL_NAME_MAX_LENGTH = 120;
 const BROADCAST_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
+const BROADCAST_LINK_PLACEHOLDER_TEXT = "link text";
+const BROADCAST_LINK_PLACEHOLDER_URL = "https://example.com";
+const BROADCAST_HISTORY_PAGE_SIZE = 20;
+const DAILY_JOINED_USERS_CHART_WIDTH = 100;
+const DAILY_JOINED_USERS_CHART_HEIGHT = 58;
+const DAILY_JOINED_USERS_CHART_BASE_OFFSET = 4;
+const JOINED_USERS_RANGE_OPTIONS: Array<{
+  value: JoinedUsersRange;
+  label: string;
+}> = [
+  { value: "90d", label: "90 days" },
+  { value: "60d", label: "60 days" },
+  { value: "30d", label: "30 days" },
+  { value: "15d", label: "15 days" },
+  { value: "7d", label: "7 days" },
+  { value: "1d", label: "1 day (today, hourly)" },
+];
+const BROADCAST_FORMATTED_TEXT_CLASS =
+  "text-sm leading-6 text-main break-words [&_a]:font-medium [&_a]:text-[var(--accent)] [&_a]:underline [&_a]:underline-offset-4 hover:[&_a]:opacity-85 [&_b]:font-semibold [&_i]:italic [&_code]:rounded-md [&_code]:border [&_code]:border-[var(--surface-border)] [&_code]:bg-[var(--surface-2)] [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[0.85em] [&_s]:opacity-80 [&_tg-spoiler]:rounded [&_tg-spoiler]:bg-[var(--surface-3)] [&_tg-spoiler]:px-1.5 [&_tg-spoiler]:text-transparent hover:[&_tg-spoiler]:text-main";
 const EMPTY_CONNECTION_PAGE_INFO: ConnectionPageInfo = {
   hasNextPage: false,
   hasPreviousPage: false,
@@ -355,6 +414,238 @@ async function parseResponseBody<T>(response: Response): Promise<T> {
   }
 }
 
+function escapeBroadcastHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function normalizeBroadcastLinkUrl(urlRaw: string): string | null {
+  const normalized = urlRaw.trim();
+
+  if (!normalized || normalized.length > 2048) {
+    return null;
+  }
+
+  if (!/^https?:\/\//i.test(normalized)) {
+    return null;
+  }
+
+  try {
+    const parsed = new URL(normalized);
+
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+}
+
+function formatBroadcastMessageToHtml(messageRaw: string): string {
+  const formattedFragments: string[] = [];
+  const stash = (html: string): string => {
+    const index = formattedFragments.length;
+    formattedFragments.push(html);
+    return `\u0000FMT${index}\u0000`;
+  };
+
+  let working = messageRaw;
+
+  working = working.replace(/`([^`\r\n]+)`/g, (_match, code: string) =>
+    stash(`<code>${escapeBroadcastHtml(code)}</code>`),
+  );
+
+  working = working.replace(
+    /\[([^\]\r\n]{1,256})\]\(([^)\r\n]{1,2048})\)/g,
+    (match, label: string, urlRaw: string) => {
+      const normalizedUrl = normalizeBroadcastLinkUrl(urlRaw);
+
+      if (!normalizedUrl) {
+        return match;
+      }
+
+      return stash(
+        `<a href="${escapeBroadcastHtml(normalizedUrl)}" target="_blank" rel="noreferrer noopener">${escapeBroadcastHtml(label)}</a>`,
+      );
+    },
+  );
+
+  working = working.replace(
+    /\*\*([^*\r\n][^*\r\n]*?)\*\*/g,
+    (_match, value: string) => stash(`<b>${escapeBroadcastHtml(value)}</b>`),
+  );
+
+  working = working.replace(/__([^_\r\n][^_\r\n]*?)__/g, (_match, value) =>
+    stash(`<i>${escapeBroadcastHtml(value)}</i>`),
+  );
+
+  working = working.replace(
+    /(^|[\s([{>])_([^_\r\n][^_\r\n]*?)_(?=$|[\s)\]}.!,?:;<])/g,
+    (_match, prefix: string, value: string) =>
+      `${prefix}${stash(`<i>${escapeBroadcastHtml(value)}</i>`)}`,
+  );
+
+  working = working.replace(
+    /~~([^~\r\n][^~\r\n]*?)~~/g,
+    (_match, value: string) => stash(`<s>${escapeBroadcastHtml(value)}</s>`),
+  );
+
+  working = working.replace(
+    /\|\|([^|\r\n][^|\r\n]*?)\|\|/g,
+    (_match, value: string) =>
+      stash(`<tg-spoiler>${escapeBroadcastHtml(value)}</tg-spoiler>`),
+  );
+
+  const escaped = escapeBroadcastHtml(working).replace(/\r?\n/g, "<br />");
+
+  return escaped.replace(
+    /\u0000FMT(\d+)\u0000/g,
+    (_match, indexRaw: string) => {
+      const index = Number.parseInt(indexRaw, 10);
+      return formattedFragments[index] ?? "";
+    },
+  );
+}
+
+function hasExistingBroadcastFormatting(
+  messageRaw: string,
+  selectionStart: number,
+  selectionEnd: number,
+): boolean {
+  if (selectionStart >= selectionEnd) {
+    return false;
+  }
+
+  const ranges: Array<{ start: number; end: number }> = [];
+
+  const pushRange = (start: number, end: number) => {
+    if (start < end) {
+      ranges.push({ start, end });
+    }
+  };
+
+  const collect = (
+    pattern: RegExp,
+    startResolver: (match: RegExpExecArray) => number,
+    endResolver: (match: RegExpExecArray) => number,
+  ) => {
+    pattern.lastIndex = 0;
+
+    while (true) {
+      const match = pattern.exec(messageRaw);
+
+      if (!match) {
+        break;
+      }
+
+      pushRange(startResolver(match), endResolver(match));
+
+      if (pattern.lastIndex === match.index) {
+        pattern.lastIndex += 1;
+      }
+    }
+  };
+
+  collect(
+    /`([^`\r\n]+)`/g,
+    (match) => match.index + 1,
+    (match) => {
+      return match.index + match[0].length - 1;
+    },
+  );
+
+  collect(
+    /\*\*([^*\r\n][^*\r\n]*?)\*\*/g,
+    (match) => {
+      return match.index + 2;
+    },
+    (match) => {
+      return match.index + match[0].length - 2;
+    },
+  );
+
+  collect(
+    /__([^_\r\n][^_\r\n]*?)__/g,
+    (match) => match.index + 2,
+    (match) => {
+      return match.index + match[0].length - 2;
+    },
+  );
+
+  collect(
+    /(^|[\s([{>])_([^_\r\n][^_\r\n]*?)_(?=$|[\s)\]}.!,?:;<])/g,
+    (match) => {
+      const prefix = match[1] ?? "";
+      return match.index + prefix.length + 1;
+    },
+    (match) => {
+      const prefix = match[1] ?? "";
+      const value = match[2] ?? "";
+      return match.index + prefix.length + 1 + value.length;
+    },
+  );
+
+  collect(
+    /~~([^~\r\n][^~\r\n]*?)~~/g,
+    (match) => match.index + 2,
+    (match) => {
+      return match.index + match[0].length - 2;
+    },
+  );
+
+  collect(
+    /\|\|([^|\r\n][^|\r\n]*?)\|\|/g,
+    (match) => {
+      return match.index + 2;
+    },
+    (match) => {
+      return match.index + match[0].length - 2;
+    },
+  );
+
+  collect(
+    /\[([^\]\r\n]{1,256})\]\(([^)\r\n]{1,2048})\)/g,
+    (match) => {
+      return match.index + 1;
+    },
+    (match) => {
+      const label = match[1] ?? "";
+      return match.index + 1 + label.length;
+    },
+  );
+
+  return ranges.some(
+    (range) => selectionStart >= range.start && selectionEnd <= range.end,
+  );
+}
+
+function hasInvalidBroadcastLinks(messageRaw: string): boolean {
+  const linkPattern = /\[([^\]\r\n]{1,256})\]\(([^)\r\n]{1,2048})\)/g;
+
+  while (true) {
+    const match = linkPattern.exec(messageRaw);
+
+    if (!match) {
+      return false;
+    }
+
+    const urlRaw = match[2] ?? "";
+    if (!normalizeBroadcastLinkUrl(urlRaw)) {
+      return true;
+    }
+
+    if (linkPattern.lastIndex === match.index) {
+      linkPattern.lastIndex += 1;
+    }
+  }
+}
+
 function formatDate(dateString: string | null | undefined): string {
   if (!dateString) {
     return "-";
@@ -374,6 +665,32 @@ function formatDate(dateString: string | null | undefined): string {
 
 function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
+}
+
+function normalizeRuntimeModelSuggestions(
+  rawSuggestions: string[] | undefined,
+): string[] {
+  const normalizedSuggestions: string[] = [];
+  const seen = new Set<string>();
+
+  for (const rawSuggestion of rawSuggestions ?? []) {
+    const suggestion = rawSuggestion.trim();
+
+    if (!suggestion || suggestion.length > RUNTIME_MODEL_NAME_MAX_LENGTH) {
+      continue;
+    }
+
+    const key = suggestion.toLowerCase();
+
+    if (seen.has(key)) {
+      continue;
+    }
+
+    seen.add(key);
+    normalizedSuggestions.push(suggestion);
+  }
+
+  return normalizedSuggestions;
 }
 
 function getPendingRecipientsCount(
@@ -435,6 +752,13 @@ export default function Home() {
   const [users, setUsers] = useState<UserRow[]>([]);
   const [overviewUsers, setOverviewUsers] = useState<UserRow[]>([]);
   const [hasLoadedOverviewUsers, setHasLoadedOverviewUsers] = useState(false);
+  const [joinedUserDates, setJoinedUserDates] = useState<UserJoinedDateRow[]>(
+    [],
+  );
+  const [joinedUsersRange, setJoinedUsersRange] =
+    useState<JoinedUsersRange>("30d");
+  const [hasLoadedJoinedUserDates, setHasLoadedJoinedUserDates] =
+    useState(false);
   const [cachedStatistics, setCachedStatistics] =
     useState<CachedStatistics | null>(null);
   const [presentations, setPresentations] = useState<PresentationRow[]>([]);
@@ -454,6 +778,9 @@ export default function Home() {
 
   const [userSearch, setUserSearch] = useState("");
   const [debouncedUserSearch, setDebouncedUserSearch] = useState("");
+  const [userRegistrationFilter, setUserRegistrationFilter] =
+    useState<UserRegistrationFilter>("all");
+  const [userSortOrder, setUserSortOrder] = useState<SortOrder>("desc");
   const [userLimit, setUserLimit] = useState(20);
   const [usersTotalCount, setUsersTotalCount] = useState(0);
   const [usersPage, setUsersPage] = useState(1);
@@ -467,6 +794,10 @@ export default function Home() {
   const [presentationLimit, setPresentationLimit] = useState(15);
   const [presentationStatus, setPresentationStatus] =
     useState<PresentationStatusFilter>("all");
+  const [presentationLanguage, setPresentationLanguage] =
+    useState<PresentationLanguageFilter>("all");
+  const [presentationSortOrder, setPresentationSortOrder] =
+    useState<SortOrder>("desc");
   const [presentationsTotalCount, setPresentationsTotalCount] = useState(0);
   const [presentationsPage, setPresentationsPage] = useState(1);
   const [presentationsAfterHistory, setPresentationsAfterHistory] = useState<
@@ -481,6 +812,13 @@ export default function Home() {
   const [broadcastHistory, setBroadcastHistory] = useState<
     BroadcastHistoryItem[]
   >([]);
+  const [broadcastTotalCount, setBroadcastTotalCount] = useState(0);
+  const [broadcastPage, setBroadcastPage] = useState(1);
+  const [broadcastAfterHistory, setBroadcastAfterHistory] = useState<
+    Array<string | null>
+  >([null]);
+  const [broadcastPageInfo, setBroadcastPageInfo] =
+    useState<ConnectionPageInfo>(EMPTY_CONNECTION_PAGE_INFO);
   const [isBroadcastHistoryLoading, setIsBroadcastHistoryLoading] =
     useState(false);
   const [isBroadcastSending, setIsBroadcastSending] = useState(false);
@@ -502,7 +840,19 @@ export default function Home() {
   ] = useState("");
   const [geminiModelInput, setGeminiModelInput] = useState("");
   const [geminiImageModelInput, setGeminiImageModelInput] = useState("");
+  const [activeRuntimeModelField, setActiveRuntimeModelField] =
+    useState<RuntimeModelField | null>(null);
   const [isSavingRuntimeSettings, setIsSavingRuntimeSettings] = useState(false);
+  const [systemPrompts, setSystemPrompts] = useState<SystemPromptResponse[]>(
+    [],
+  );
+  const [systemPromptInputs, setSystemPromptInputs] = useState<
+    Record<string, string>
+  >({});
+  const [isSystemPromptsLoading, setIsSystemPromptsLoading] = useState(true);
+  const [savingSystemPromptKey, setSavingSystemPromptKey] = useState<
+    string | null
+  >(null);
 
   const [adminName, setAdminName] = useState("");
   const [adminUsername, setAdminUsername] = useState("");
@@ -530,10 +880,14 @@ export default function Home() {
   const [isUpdatingOwnAdmin, setIsUpdatingOwnAdmin] = useState(false);
 
   const usersRequestVersionRef = useRef(0);
+  const joinedUserDatesRequestVersionRef = useRef(0);
   const presentationsRequestVersionRef = useRef(0);
+  const broadcastRequestVersionRef = useRef(0);
+  const profileSyncRequestInFlightRef = useRef(false);
   const profileSyncCompletionToastJobIdRef = useRef<number | null>(null);
   const profileSyncWasRunningRef = useRef(false);
   const lastDashboardPathRef = useRef<string | null>(null);
+  const broadcastMessageInputRef = useRef<HTMLTextAreaElement | null>(null);
   const broadcastImageInputRef = useRef<HTMLInputElement | null>(null);
 
   const currentAdminRole = profile?.role ?? session?.admin.role ?? null;
@@ -627,6 +981,12 @@ export default function Home() {
           query.set("search", search);
         }
 
+        if (userRegistrationFilter !== "all") {
+          query.set("registration", userRegistrationFilter);
+        }
+
+        query.set("sortOrder", userSortOrder);
+
         query.set("first", `${Math.max(1, Math.min(200, userLimit))}`);
 
         if (after) {
@@ -651,7 +1011,13 @@ export default function Home() {
         }
       }
     },
-    [apiRequest, debouncedUserSearch, userLimit],
+    [
+      apiRequest,
+      debouncedUserSearch,
+      userLimit,
+      userRegistrationFilter,
+      userSortOrder,
+    ],
   );
 
   const fetchUsersFirstPage = useCallback(
@@ -731,6 +1097,29 @@ export default function Home() {
     setHasLoadedOverviewUsers(true);
   }, [apiRequest]);
 
+  const fetchJoinedUserDates = useCallback(async () => {
+    const requestVersion = ++joinedUserDatesRequestVersionRef.current;
+
+    try {
+      const data = await apiRequest<UserJoinedDateRow[]>(
+        "/admin/users/joined-dates",
+      );
+
+      if (requestVersion !== joinedUserDatesRequestVersionRef.current) {
+        return;
+      }
+
+      setJoinedUserDates(Array.isArray(data) ? data : []);
+      setHasLoadedJoinedUserDates(true);
+    } catch (error) {
+      if (requestVersion === joinedUserDatesRequestVersionRef.current) {
+        setHasLoadedJoinedUserDates(true);
+      }
+
+      throw error;
+    }
+  }, [apiRequest]);
+
   const fetchPresentationsPage = useCallback(
     async ({
       after = null,
@@ -748,6 +1137,12 @@ export default function Home() {
         if (presentationStatus !== "all") {
           query.set("status", presentationStatus);
         }
+
+        if (presentationLanguage !== "all") {
+          query.set("language", presentationLanguage);
+        }
+
+        query.set("sortOrder", presentationSortOrder);
 
         query.set("first", `${Math.max(1, Math.min(200, presentationLimit))}`);
 
@@ -773,7 +1168,13 @@ export default function Home() {
         }
       }
     },
-    [apiRequest, presentationLimit, presentationStatus],
+    [
+      apiRequest,
+      presentationLanguage,
+      presentationLimit,
+      presentationSortOrder,
+      presentationStatus,
+    ],
   );
 
   const fetchPresentationsFirstPage = useCallback(async () => {
@@ -840,8 +1241,30 @@ export default function Home() {
       );
       setGeminiModelInput(data.geminiModel);
       setGeminiImageModelInput(data.geminiImageModel);
+      setActiveRuntimeModelField(null);
     } finally {
       setIsSettingsLoading(false);
+    }
+  }, [apiRequest]);
+
+  const fetchSystemPrompts = useCallback(async () => {
+    setIsSystemPromptsLoading(true);
+
+    try {
+      const data = await apiRequest<SystemPromptResponse[]>(
+        "/admin/system-prompts",
+      );
+
+      setSystemPrompts(data);
+      setSystemPromptInputs(
+        Object.fromEntries(data.map((prompt) => [prompt.key, prompt.content])),
+      );
+    } catch (error) {
+      setSystemPrompts([]);
+      setSystemPromptInputs({});
+      toast.error(toErrorMessage(error));
+    } finally {
+      setIsSystemPromptsLoading(false);
     }
   }, [apiRequest]);
 
@@ -865,21 +1288,101 @@ export default function Home() {
     }
   }, [apiRequest, currentAdminRole]);
 
-  const fetchBroadcastHistory = useCallback(async () => {
-    setIsBroadcastHistoryLoading(true);
+  const fetchBroadcastPage = useCallback(
+    async ({
+      after = null,
+      page = 1,
+    }: {
+      after?: string | null;
+      page?: number;
+    } = {}) => {
+      setIsBroadcastHistoryLoading(true);
+      const requestVersion = ++broadcastRequestVersionRef.current;
 
-    try {
-      const data = await apiRequest<BroadcastHistoryItem[]>(
-        "/admin/broadcasts?first=50",
-      );
-      setBroadcastHistory(data);
-    } catch (error) {
-      setBroadcastHistory([]);
-      toast.error(toErrorMessage(error));
-    } finally {
-      setIsBroadcastHistoryLoading(false);
+      try {
+        const query = new URLSearchParams();
+        query.set("first", `${BROADCAST_HISTORY_PAGE_SIZE}`);
+
+        if (after) {
+          query.set("after", after);
+        }
+
+        const data = await apiRequest<ConnectionResponse<BroadcastHistoryItem>>(
+          `/admin/broadcasts?${query.toString()}`,
+        );
+
+        if (requestVersion !== broadcastRequestVersionRef.current) {
+          return;
+        }
+
+        setBroadcastHistory(data.nodes);
+        setBroadcastTotalCount(data.totalCount);
+        setBroadcastPageInfo(data.pageInfo ?? EMPTY_CONNECTION_PAGE_INFO);
+        setBroadcastPage(Math.max(1, page));
+      } catch (error) {
+        if (requestVersion !== broadcastRequestVersionRef.current) {
+          return;
+        }
+
+        setBroadcastHistory([]);
+        setBroadcastTotalCount(0);
+        setBroadcastPageInfo(EMPTY_CONNECTION_PAGE_INFO);
+        toast.error(toErrorMessage(error));
+      } finally {
+        if (requestVersion === broadcastRequestVersionRef.current) {
+          setIsBroadcastHistoryLoading(false);
+        }
+      }
+    },
+    [apiRequest],
+  );
+
+  const fetchBroadcastFirstPage = useCallback(async () => {
+    setBroadcastPage(1);
+    setBroadcastAfterHistory([null]);
+    setBroadcastPageInfo(EMPTY_CONNECTION_PAGE_INFO);
+
+    await fetchBroadcastPage({ page: 1, after: null });
+  }, [fetchBroadcastPage]);
+
+  const fetchBroadcastCurrentPage = useCallback(async () => {
+    const after = broadcastAfterHistory[broadcastPage - 1] ?? null;
+    await fetchBroadcastPage({ page: broadcastPage, after });
+  }, [broadcastAfterHistory, broadcastPage, fetchBroadcastPage]);
+
+  const fetchBroadcastNextPage = useCallback(async () => {
+    if (!broadcastPageInfo.hasNextPage || !broadcastPageInfo.endCursor) {
+      return;
     }
-  }, [apiRequest]);
+
+    const nextPage = broadcastPage + 1;
+    const nextAfter = broadcastPageInfo.endCursor;
+
+    setBroadcastAfterHistory((previous) => {
+      const trimmed = previous.slice(0, broadcastPage);
+      return [...trimmed, nextAfter];
+    });
+
+    await fetchBroadcastPage({ page: nextPage, after: nextAfter });
+  }, [
+    broadcastPage,
+    broadcastPageInfo.endCursor,
+    broadcastPageInfo.hasNextPage,
+    fetchBroadcastPage,
+  ]);
+
+  const fetchBroadcastPreviousPage = useCallback(async () => {
+    if (broadcastPage <= 1) {
+      return;
+    }
+
+    const previousPage = broadcastPage - 1;
+    const previousAfter = broadcastAfterHistory[previousPage - 1] ?? null;
+
+    setBroadcastAfterHistory((previous) => previous.slice(0, previousPage));
+
+    await fetchBroadcastPage({ page: previousPage, after: previousAfter });
+  }, [broadcastAfterHistory, broadcastPage, fetchBroadcastPage]);
 
   const refreshDashboard = useCallback(async () => {
     if (!session?.accessToken) {
@@ -896,14 +1399,19 @@ export default function Home() {
       fetchMe(),
       fetchOverview(),
       fetchOverviewUsers(),
+      fetchJoinedUserDates(),
       presentationFetchTask,
-      ...(pathname.startsWith("/settings") ? [fetchRuntimeSettings()] : []),
+      ...(pathname.startsWith("/settings")
+        ? [fetchRuntimeSettings(), fetchSystemPrompts()]
+        : []),
       ...(pathname.startsWith("/users") ? [fetchUsersCurrentPage()] : []),
       ...(pathname.startsWith("/users") ? [fetchLatestProfileSyncJob()] : []),
       ...(pathname.startsWith("/admins") && currentAdminRole === "SUPERADMIN"
         ? [fetchAdmins()]
         : []),
-      ...(pathname.startsWith("/broadcast") ? [fetchBroadcastHistory()] : []),
+      ...(pathname.startsWith("/broadcast")
+        ? [fetchBroadcastCurrentPage()]
+        : []),
     ]);
 
     const rejected = results.find(
@@ -921,10 +1429,12 @@ export default function Home() {
     fetchMe,
     fetchOverview,
     fetchOverviewUsers,
-    fetchBroadcastHistory,
+    fetchJoinedUserDates,
+    fetchBroadcastCurrentPage,
     fetchPresentationsCurrentPage,
     fetchPresentationsFirstPage,
     fetchRuntimeSettings,
+    fetchSystemPrompts,
     fetchUsersCurrentPage,
     fetchLatestProfileSyncJob,
     currentAdminRole,
@@ -1126,7 +1636,9 @@ export default function Home() {
     isHydrated,
     pathname,
     session?.accessToken,
+    userRegistrationFilter,
     userLimit,
+    userSortOrder,
     debouncedUserSearch,
   ]);
 
@@ -1207,7 +1719,9 @@ export default function Home() {
     fetchPresentationsFirstPage,
     isHydrated,
     pathname,
+    presentationLanguage,
     presentationLimit,
+    presentationSortOrder,
     presentationStatus,
     session?.accessToken,
   ]);
@@ -1307,6 +1821,161 @@ export default function Home() {
     [cachedUserLifecycle],
   );
 
+  const isJoinedUsersHourlyRange = joinedUsersRange === "1d";
+
+  const dailyJoinedUsersSeries = useMemo<DailyJoinedUsersPoint[]>(() => {
+    if (joinedUserDates.length === 0) {
+      return [];
+    }
+
+    const now = new Date();
+    const todayUtc = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+
+    if (joinedUsersRange === "1d") {
+      const endHour = now.getUTCHours();
+      const countsByHour = Array.from({ length: endHour + 1 }, () => 0);
+
+      for (const row of joinedUserDates) {
+        const parsedDate = new Date(row.createdAt);
+
+        if (Number.isNaN(parsedDate.getTime())) {
+          continue;
+        }
+
+        if (
+          parsedDate.getUTCFullYear() !== now.getUTCFullYear() ||
+          parsedDate.getUTCMonth() !== now.getUTCMonth() ||
+          parsedDate.getUTCDate() !== now.getUTCDate()
+        ) {
+          continue;
+        }
+
+        const hour = parsedDate.getUTCHours();
+
+        if (hour >= 0 && hour <= endHour) {
+          countsByHour[hour] += 1;
+        }
+      }
+
+      return countsByHour.map((count, hour) => {
+        const normalizedHour = hour.toString().padStart(2, "0");
+
+        return {
+          dateKey: `${todayUtc.toISOString().slice(0, 10)}-${normalizedHour}`,
+          label: `${normalizedHour}:00`,
+          count,
+        };
+      });
+    }
+
+    const rangeDaysRaw = Number.parseInt(joinedUsersRange.slice(0, -1), 10);
+    const rangeDays =
+      Number.isFinite(rangeDaysRaw) && rangeDaysRaw > 0 ? rangeDaysRaw : 30;
+    const startDate = new Date(todayUtc);
+    startDate.setUTCDate(startDate.getUTCDate() - (rangeDays - 1));
+    const countsByDate = new Map<string, number>();
+
+    for (const row of joinedUserDates) {
+      const parsedDate = new Date(row.createdAt);
+
+      if (Number.isNaN(parsedDate.getTime())) {
+        continue;
+      }
+
+      if (parsedDate < startDate || parsedDate > now) {
+        continue;
+      }
+
+      const dateKey = parsedDate.toISOString().slice(0, 10);
+      countsByDate.set(dateKey, (countsByDate.get(dateKey) ?? 0) + 1);
+    }
+
+    const labelFormatter = new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit",
+      month: "short",
+      timeZone: "UTC",
+    });
+    const points: DailyJoinedUsersPoint[] = [];
+
+    for (
+      const cursor = new Date(startDate);
+      cursor <= todayUtc;
+      cursor.setUTCDate(cursor.getUTCDate() + 1)
+    ) {
+      const dateKey = cursor.toISOString().slice(0, 10);
+
+      points.push({
+        dateKey,
+        label: labelFormatter.format(cursor),
+        count: countsByDate.get(dateKey) ?? 0,
+      });
+    }
+
+    return points;
+  }, [joinedUserDates, joinedUsersRange]);
+
+  const dailyJoinedUsersTotal = useMemo(
+    () => dailyJoinedUsersSeries.reduce((sum, point) => sum + point.count, 0),
+    [dailyJoinedUsersSeries],
+  );
+
+  const dailyJoinedUsersMax = useMemo(
+    () =>
+      dailyJoinedUsersSeries.reduce(
+        (maxValue, point) => Math.max(maxValue, point.count),
+        0,
+      ),
+    [dailyJoinedUsersSeries],
+  );
+
+  const dailyJoinedUsersBarPoints = useMemo<DailyJoinedUsersBarPoint[]>(() => {
+    if (dailyJoinedUsersSeries.length === 0) {
+      return [];
+    }
+
+    const maxValue = Math.max(dailyJoinedUsersMax, 1);
+    const chartBaseY = DAILY_JOINED_USERS_CHART_HEIGHT - 4;
+    const slotWidth = DAILY_JOINED_USERS_CHART_WIDTH / dailyJoinedUsersSeries.length;
+    const minBarWidth = dailyJoinedUsersSeries.length > 45 ? 0.75 : 1.6;
+    const barWidth = Math.max(Math.min(slotWidth * 0.72, 8), minBarWidth);
+
+    return dailyJoinedUsersSeries.map((point, index) => ({
+      ...point,
+      x: index * slotWidth + (slotWidth - barWidth) / 2,
+      y: chartBaseY - (point.count / maxValue) * chartBaseY,
+      barWidth,
+      barHeight: (point.count / maxValue) * chartBaseY,
+    }));
+  }, [dailyJoinedUsersMax, dailyJoinedUsersSeries]);
+
+  const dailyJoinedUsersChartGuides = useMemo(() => {
+    const chartBaseY = DAILY_JOINED_USERS_CHART_HEIGHT - 4;
+
+    return [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
+      ratio,
+      y: chartBaseY - ratio * chartBaseY,
+    }));
+  }, []);
+
+  const dailyJoinedUsersMiddlePoint =
+    dailyJoinedUsersSeries[
+      Math.floor((dailyJoinedUsersSeries.length - 1) / 2)
+    ] ?? null;
+  const dailyJoinedUsersLatestPoint =
+    dailyJoinedUsersSeries[dailyJoinedUsersSeries.length - 1] ?? null;
+  const joinedUsersPeakLabel = isJoinedUsersHourlyRange
+    ? "Peak/hour"
+    : "Peak/day";
+  const joinedUsersLatestLabel = isJoinedUsersHourlyRange
+    ? "Latest hour"
+    : "Latest day";
+  const joinedUsersRangeUnitLabel = isJoinedUsersHourlyRange ? "hours" : "days";
+  const joinedUsersChartLabel = isJoinedUsersHourlyRange
+    ? "Joined users by hour (UTC)"
+    : "Daily joined users (UTC)";
+
   useEffect(() => {
     if (!isHydrated) {
       return;
@@ -1365,6 +2034,8 @@ export default function Home() {
   const showPresentationsSkeleton =
     isPresentationsLoading && presentations.length === 0;
   const showSettingsSkeleton = isSettingsLoading && !runtimeSettings;
+  const showSystemPromptsSkeleton =
+    isSystemPromptsLoading && systemPrompts.length === 0;
   const showAdminsSkeleton = isAdminsLoading && admins.length === 0;
 
   const sectionCopy = useMemo(
@@ -1379,7 +2050,7 @@ export default function Home() {
         eyebrow: "Configuration",
         title: "Generation Settings",
         description:
-          "Manage runtime limits, prompt validation, and AI model routing.",
+          "Manage runtime limits, AI model routing, and editable system prompts.",
       },
       users: {
         eyebrow: "User Intelligence",
@@ -1444,6 +2115,25 @@ export default function Home() {
     [],
   );
 
+  const broadcastMessagePreviewHtml = useMemo(
+    () => formatBroadcastMessageToHtml(broadcastMessage),
+    [broadcastMessage],
+  );
+
+  const geminiModelSuggestions = useMemo(
+    () =>
+      normalizeRuntimeModelSuggestions(runtimeSettings?.geminiModelSuggestions),
+    [runtimeSettings?.geminiModelSuggestions],
+  );
+
+  const geminiImageModelSuggestions = useMemo(
+    () =>
+      normalizeRuntimeModelSuggestions(
+        runtimeSettings?.geminiImageModelSuggestions,
+      ),
+    [runtimeSettings?.geminiImageModelSuggestions],
+  );
+
   const statusPillClass = (status: PresentationStatus) => {
     if (status === "pending") {
       return "border-amber-300 bg-amber-100 text-amber-700";
@@ -1473,18 +2163,28 @@ export default function Home() {
     setProfile(null);
     setOverview(null);
     setUsers([]);
+    setUserSearch("");
     setDebouncedUserSearch("");
+    setUserRegistrationFilter("all");
+    setUserSortOrder("desc");
     setUsersTotalCount(0);
     setUsersPage(1);
     setUsersAfterHistory([null]);
     setUsersPageInfo(EMPTY_CONNECTION_PAGE_INFO);
     setIsSyncingUserProfileImages(false);
+    profileSyncRequestInFlightRef.current = false;
     setProfileSyncJob(null);
     profileSyncWasRunningRef.current = false;
     profileSyncCompletionToastJobIdRef.current = null;
     setOverviewUsers([]);
     setHasLoadedOverviewUsers(false);
+    setJoinedUserDates([]);
+    setJoinedUsersRange("30d");
+    setHasLoadedJoinedUserDates(false);
     setPresentations([]);
+    setPresentationStatus("all");
+    setPresentationLanguage("all");
+    setPresentationSortOrder("desc");
     setPresentationsTotalCount(0);
     setPresentationsPage(1);
     setPresentationsAfterHistory([null]);
@@ -1492,6 +2192,10 @@ export default function Home() {
     setBroadcastMessage("");
     setBroadcastResult(null);
     setBroadcastHistory([]);
+    setBroadcastTotalCount(0);
+    setBroadcastPage(1);
+    setBroadcastAfterHistory([null]);
+    setBroadcastPageInfo(EMPTY_CONNECTION_PAGE_INFO);
     setIsBroadcastHistoryLoading(false);
     setIsBroadcastSending(false);
     setBroadcastImageFile(null);
@@ -1526,7 +2230,12 @@ export default function Home() {
     setFreePresentationGenerationLimitInput("");
     setGeminiModelInput("");
     setGeminiImageModelInput("");
+    setActiveRuntimeModelField(null);
     setIsSavingRuntimeSettings(false);
+    setSystemPrompts([]);
+    setSystemPromptInputs({});
+    setIsSystemPromptsLoading(true);
+    setSavingSystemPromptKey(null);
     toast.success("Session cleared.");
     router.replace("/login");
   };
@@ -1552,6 +2261,11 @@ export default function Home() {
   };
 
   const handleSyncAllUserProfileImages = async () => {
+    if (profileSyncRequestInFlightRef.current || isSyncingUserProfileImages) {
+      return;
+    }
+
+    profileSyncRequestInFlightRef.current = true;
     setIsSyncingUserProfileImages(true);
     profileSyncWasRunningRef.current = true;
 
@@ -1587,6 +2301,8 @@ export default function Home() {
       toast.error(toErrorMessage(error));
       setIsSyncingUserProfileImages(false);
       profileSyncWasRunningRef.current = false;
+    } finally {
+      profileSyncRequestInFlightRef.current = false;
     }
   };
 
@@ -1628,6 +2344,158 @@ export default function Home() {
     setBroadcastImagePreviewUrl(URL.createObjectURL(file));
   };
 
+  const focusBroadcastMessageSelection = (
+    selectionStart: number,
+    selectionEnd: number,
+  ) => {
+    window.requestAnimationFrame(() => {
+      const textarea = broadcastMessageInputRef.current;
+
+      if (!textarea) {
+        return;
+      }
+
+      textarea.focus();
+      textarea.setSelectionRange(selectionStart, selectionEnd);
+    });
+  };
+
+  const applyBroadcastWrapper = (
+    wrapperStart: string,
+    wrapperEnd: string,
+    placeholder: string,
+  ) => {
+    const textarea = broadcastMessageInputRef.current;
+
+    if (!textarea) {
+      return;
+    }
+
+    const maxLength = broadcastImageFile ? 1024 : 4096;
+    const currentValue = broadcastMessage;
+    const rawSelectionStart = textarea.selectionStart ?? currentValue.length;
+    const rawSelectionEnd = textarea.selectionEnd ?? currentValue.length;
+    const selectionStart = Math.max(
+      0,
+      Math.min(rawSelectionStart, currentValue.length),
+    );
+    const selectionEnd = Math.max(
+      selectionStart,
+      Math.min(rawSelectionEnd, currentValue.length),
+    );
+    const selectedText = currentValue.slice(selectionStart, selectionEnd);
+
+    if (
+      selectedText &&
+      hasExistingBroadcastFormatting(currentValue, selectionStart, selectionEnd)
+    ) {
+      toast.error("Selected text already has formatting.");
+      return;
+    }
+
+    const before = currentValue.slice(0, selectionStart);
+    const after = currentValue.slice(selectionEnd);
+    const insertion = `${wrapperStart}${selectedText || placeholder}${wrapperEnd}`;
+    const nextValue = `${before}${insertion}${after}`;
+
+    if (nextValue.length > maxLength) {
+      toast.error(`Message must be ${maxLength} characters or less.`);
+      return;
+    }
+
+    setBroadcastMessage(nextValue);
+
+    if (selectedText) {
+      const cursorPosition = selectionStart + insertion.length;
+      focusBroadcastMessageSelection(cursorPosition, cursorPosition);
+      return;
+    }
+
+    const placeholderStart = selectionStart + wrapperStart.length;
+    const placeholderEnd = placeholderStart + placeholder.length;
+    focusBroadcastMessageSelection(placeholderStart, placeholderEnd);
+  };
+
+  const applyBroadcastLinkFormatting = () => {
+    const textarea = broadcastMessageInputRef.current;
+
+    if (!textarea) {
+      return;
+    }
+
+    const maxLength = broadcastImageFile ? 1024 : 4096;
+    const currentValue = broadcastMessage;
+    const rawSelectionStart = textarea.selectionStart ?? currentValue.length;
+    const rawSelectionEnd = textarea.selectionEnd ?? currentValue.length;
+    const selectionStart = Math.max(
+      0,
+      Math.min(rawSelectionStart, currentValue.length),
+    );
+    const selectionEnd = Math.max(
+      selectionStart,
+      Math.min(rawSelectionEnd, currentValue.length),
+    );
+    const selectedText = currentValue.slice(selectionStart, selectionEnd);
+
+    if (
+      selectedText &&
+      hasExistingBroadcastFormatting(currentValue, selectionStart, selectionEnd)
+    ) {
+      toast.error("Selected text already has formatting.");
+      return;
+    }
+
+    const before = currentValue.slice(0, selectionStart);
+    const after = currentValue.slice(selectionEnd);
+    const linkText = selectedText || BROADCAST_LINK_PLACEHOLDER_TEXT;
+    const insertion = `[${linkText}](${BROADCAST_LINK_PLACEHOLDER_URL})`;
+    const nextValue = `${before}${insertion}${after}`;
+
+    if (nextValue.length > maxLength) {
+      toast.error(`Message must be ${maxLength} characters or less.`);
+      return;
+    }
+
+    setBroadcastMessage(nextValue);
+
+    if (selectedText) {
+      const urlStart = selectionStart + linkText.length + 3;
+      const urlEnd = urlStart + BROADCAST_LINK_PLACEHOLDER_URL.length;
+      focusBroadcastMessageSelection(urlStart, urlEnd);
+      return;
+    }
+
+    const textStart = selectionStart + 1;
+    const textEnd = textStart + linkText.length;
+    focusBroadcastMessageSelection(textStart, textEnd);
+  };
+
+  const applyBroadcastFormatting = (
+    format: "bold" | "italic" | "code" | "link" | "spoiler",
+  ) => {
+    if (format === "link") {
+      applyBroadcastLinkFormatting();
+      return;
+    }
+
+    if (format === "bold") {
+      applyBroadcastWrapper("**", "**", "bold text");
+      return;
+    }
+
+    if (format === "italic") {
+      applyBroadcastWrapper("__", "__", "italic text");
+      return;
+    }
+
+    if (format === "code") {
+      applyBroadcastWrapper("`", "`", "code");
+      return;
+    }
+
+    applyBroadcastWrapper("||", "||", "spoiler");
+  };
+
   const handleBroadcast = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -1635,6 +2503,11 @@ export default function Home() {
 
     if (!trimmedMessage) {
       toast.error("Message is required.");
+      return;
+    }
+
+    if (hasInvalidBroadcastLinks(trimmedMessage)) {
+      toast.error("Links must start with http:// or https://.");
       return;
     }
 
@@ -1666,7 +2539,7 @@ export default function Home() {
       setBroadcastResult(result);
       setBroadcastMessage("");
       clearBroadcastImage();
-      await fetchBroadcastHistory();
+      await fetchBroadcastFirstPage();
       toast.success("Broadcast queued successfully.");
     } catch (error) {
       toast.error(toErrorMessage(error));
@@ -1699,6 +2572,7 @@ export default function Home() {
       );
       setGeminiModelInput(updated.geminiModel);
       setGeminiImageModelInput(updated.geminiImageModel);
+      setActiveRuntimeModelField(null);
       toast.success(successMessage);
     } catch (error) {
       toast.error(toErrorMessage(error));
@@ -1782,6 +2656,51 @@ export default function Home() {
       },
       "Runtime settings updated.",
     );
+  };
+
+  const handleSystemPromptInputChange = (key: string, value: string) => {
+    setSystemPromptInputs((previous) => ({
+      ...previous,
+      [key]: value,
+    }));
+  };
+
+  const handleSaveSystemPrompt = async (key: string) => {
+    const nextContent = systemPromptInputs[key]?.trim() ?? "";
+
+    if (!nextContent) {
+      toast.error("System prompt content is required.");
+      return;
+    }
+
+    setSavingSystemPromptKey(key);
+
+    try {
+      const updatedPrompt = await apiRequest<SystemPromptResponse>(
+        `/admin/system-prompts/${encodeURIComponent(key)}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({
+            content: nextContent,
+          }),
+        },
+      );
+
+      setSystemPrompts((previous) =>
+        previous.map((prompt) =>
+          prompt.key === updatedPrompt.key ? updatedPrompt : prompt,
+        ),
+      );
+      setSystemPromptInputs((previous) => ({
+        ...previous,
+        [updatedPrompt.key]: updatedPrompt.content,
+      }));
+      toast.success(`${updatedPrompt.title} prompt updated.`);
+    } catch (error) {
+      toast.error(toErrorMessage(error));
+    } finally {
+      setSavingSystemPromptKey(null);
+    }
   };
 
   const handleCreateAdmin = async (event: FormEvent<HTMLFormElement>) => {
@@ -2420,6 +3339,159 @@ export default function Home() {
                             </div>
                           </div>
                         </BentoCard>
+
+                        <div className="surface-glass order-3 space-y-3 rounded-3xl p-5 md:col-span-6 md:row-span-1">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <p className="text-xs text-muted">
+                              {joinedUsersChartLabel}
+                            </p>
+
+                            <div className="flex items-center gap-2">
+                              <label
+                                htmlFor="joined-users-range"
+                                className="sr-only"
+                              >
+                                Joined users range
+                              </label>
+                              <select
+                                id="joined-users-range"
+                                value={joinedUsersRange}
+                                onChange={(event) => {
+                                  setJoinedUsersRange(
+                                    event.target.value as JoinedUsersRange,
+                                  );
+                                }}
+                                className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2 py-1 text-xs text-main outline-none focus:border-[var(--accent)]"
+                              >
+                                {JOINED_USERS_RANGE_OPTIONS.map((option) => (
+                                  <option
+                                    key={`joined-users-range-${option.value}`}
+                                    value={option.value}
+                                  >
+                                    {option.label}
+                                  </option>
+                                ))}
+                              </select>
+
+                              <p className="text-sm font-semibold text-main">
+                                <NumberTicker value={dailyJoinedUsersTotal} />{" "}
+                                total
+                              </p>
+                            </div>
+                          </div>
+
+                          {!hasLoadedJoinedUserDates ? (
+                            <div className="space-y-2">
+                              <SkeletonBlock className="h-36 w-full rounded-xl md:h-44" />
+                              <SkeletonBlock className="h-3 w-3/5" />
+                            </div>
+                          ) : dailyJoinedUsersSeries.length === 0 ? (
+                            <p className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] px-3 py-2 text-sm text-muted">
+                              No joined users yet.
+                            </p>
+                          ) : (
+                            <>
+                              <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] p-2">
+                                <svg
+                                  viewBox={`0 0 ${DAILY_JOINED_USERS_CHART_WIDTH} ${DAILY_JOINED_USERS_CHART_HEIGHT}`}
+                                  preserveAspectRatio="none"
+                                  className="h-36 w-full md:h-44"
+                                  role="img"
+                                  aria-label="Joined users column chart"
+                                >
+                                  <defs>
+                                    <linearGradient
+                                      id="daily-joined-users-bar-fill"
+                                      x1="0"
+                                      y1="0"
+                                      x2="0"
+                                      y2="1"
+                                    >
+                                      <stop
+                                        offset="0%"
+                                        stopColor="var(--accent)"
+                                        stopOpacity="0.88"
+                                      />
+                                      <stop
+                                        offset="100%"
+                                        stopColor="var(--accent)"
+                                        stopOpacity="0.24"
+                                      />
+                                    </linearGradient>
+                                  </defs>
+
+                                  {dailyJoinedUsersChartGuides.map((guide) => (
+                                    <line
+                                      key={`joined-users-guide-${guide.ratio}`}
+                                      x1="0"
+                                      y1={guide.y}
+                                      x2={DAILY_JOINED_USERS_CHART_WIDTH}
+                                      y2={guide.y}
+                                      stroke="var(--surface-border)"
+                                      strokeWidth={guide.ratio === 0 ? 1.1 : 0.8}
+                                      strokeDasharray={
+                                        guide.ratio === 0 ? undefined : "1.2 2"
+                                      }
+                                      opacity={guide.ratio === 0 ? 0.9 : 0.55}
+                                    />
+                                  ))}
+
+                                  {dailyJoinedUsersBarPoints.map((point, index) => {
+                                    const isPeak =
+                                      dailyJoinedUsersMax > 0 &&
+                                      point.count === dailyJoinedUsersMax;
+                                    const isLatest =
+                                      index === dailyJoinedUsersBarPoints.length - 1;
+
+                                    return (
+                                      <rect
+                                        key={`joined-users-bar-${point.dateKey}`}
+                                        x={point.x}
+                                        y={point.y}
+                                        width={point.barWidth}
+                                        height={point.barHeight}
+                                        rx={Math.min(point.barWidth / 2, 1.4)}
+                                        fill={
+                                          isPeak || isLatest
+                                            ? "var(--accent)"
+                                            : "url(#daily-joined-users-bar-fill)"
+                                        }
+                                        opacity={isPeak || isLatest ? 1 : 0.82}
+                                      >
+                                        <title>{`${point.label}: ${point.count}`}</title>
+                                      </rect>
+                                    );
+                                  })}
+                                </svg>
+                              </div>
+
+                              <div className="flex items-center justify-between text-[0.72rem] text-muted">
+                                <span>{dailyJoinedUsersSeries[0]?.label ?? "-"}</span>
+                                <span>{dailyJoinedUsersMiddlePoint?.label ?? "-"}</span>
+                                <span>{dailyJoinedUsersLatestPoint?.label ?? "-"}</span>
+                              </div>
+
+                              <div className="grid grid-cols-3 gap-2 text-[0.72rem] text-muted">
+                                <p>
+                                  {joinedUsersPeakLabel}:{" "}
+                                  <span className="text-main">
+                                    {dailyJoinedUsersMax}
+                                  </span>
+                                </p>
+                                <p>
+                                  {joinedUsersLatestLabel}:{" "}
+                                  <span className="text-main">
+                                    {dailyJoinedUsersLatestPoint?.count ?? 0}
+                                  </span>
+                                </p>
+                                <p>
+                                  Range: <span className="text-main">{dailyJoinedUsersSeries.length}</span>{" "}
+                                  {joinedUsersRangeUnitLabel}
+                                </p>
+                              </div>
+                            </>
+                          )}
+                        </div>
                       </BentoGrid>
                     ) : null}
 
@@ -2627,26 +3699,81 @@ export default function Home() {
 
                                   <div className="mt-2 space-y-2">
                                     <p className="text-xs text-main">
-                                      Current: {" "}
+                                      Current:{" "}
                                       <span className="font-semibold">
                                         {runtimeSettings?.geminiModel ?? "-"}
                                       </span>
                                     </p>
 
-                                    <input
-                                      type="text"
-                                      maxLength={RUNTIME_MODEL_NAME_MAX_LENGTH}
-                                      value={geminiModelInput}
-                                      onChange={(event) => {
-                                        setGeminiModelInput(event.target.value);
-                                      }}
-                                      className="w-full rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2.5 py-1.5 text-xs text-main outline-none focus:border-[var(--accent)]"
-                                      placeholder="gemini-2.5-flash"
-                                      required
-                                    />
+                                    <div className="relative">
+                                      <input
+                                        type="text"
+                                        maxLength={
+                                          RUNTIME_MODEL_NAME_MAX_LENGTH
+                                        }
+                                        value={geminiModelInput}
+                                        onChange={(event) => {
+                                          setGeminiModelInput(
+                                            event.target.value,
+                                          );
+                                        }}
+                                        onFocus={() => {
+                                          setActiveRuntimeModelField(
+                                            "geminiModel",
+                                          );
+                                        }}
+                                        onBlur={() => {
+                                          setActiveRuntimeModelField(
+                                            (current) =>
+                                              current === "geminiModel"
+                                                ? null
+                                                : current,
+                                          );
+                                        }}
+                                        className="w-full rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2.5 py-1.5 text-xs text-main outline-none focus:border-[var(--accent)]"
+                                        placeholder="gemini-2.5-flash"
+                                        autoComplete="off"
+                                        required
+                                      />
+
+                                      {activeRuntimeModelField ===
+                                      "geminiModel" ? (
+                                        <div className="absolute z-20 mt-1 max-h-44 w-full overflow-y-auto rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] shadow-lg">
+                                          {geminiModelSuggestions.length > 0 ? (
+                                            geminiModelSuggestions.map(
+                                              (suggestion) => (
+                                                <button
+                                                  key={`gemini-suggestion-${suggestion}`}
+                                                  type="button"
+                                                  onMouseDown={(event) => {
+                                                    event.preventDefault();
+                                                  }}
+                                                  onClick={() => {
+                                                    setGeminiModelInput(
+                                                      suggestion,
+                                                    );
+                                                    setActiveRuntimeModelField(
+                                                      null,
+                                                    );
+                                                  }}
+                                                  className="block w-full px-2.5 py-1.5 text-left text-xs text-main transition hover:bg-[var(--surface-2)]"
+                                                >
+                                                  {suggestion}
+                                                </button>
+                                              ),
+                                            )
+                                          ) : (
+                                            <p className="px-2.5 py-2 text-[0.72rem] text-muted">
+                                              No saved model suggestions yet.
+                                            </p>
+                                          )}
+                                        </div>
+                                      ) : null}
+                                    </div>
 
                                     <p className="text-[0.72rem] text-muted">
-                                      Max {RUNTIME_MODEL_NAME_MAX_LENGTH} characters.
+                                      Max {RUNTIME_MODEL_NAME_MAX_LENGTH}{" "}
+                                      characters.
                                     </p>
                                   </div>
                                 </article>
@@ -2664,32 +3791,243 @@ export default function Home() {
 
                                   <div className="mt-2 space-y-2">
                                     <p className="text-xs text-main">
-                                      Current: {" "}
+                                      Current:{" "}
                                       <span className="font-semibold">
-                                        {runtimeSettings?.geminiImageModel ?? "-"}
+                                        {runtimeSettings?.geminiImageModel ??
+                                          "-"}
                                       </span>
                                     </p>
 
-                                    <input
-                                      type="text"
-                                      maxLength={RUNTIME_MODEL_NAME_MAX_LENGTH}
-                                      value={geminiImageModelInput}
-                                      onChange={(event) => {
-                                        setGeminiImageModelInput(
-                                          event.target.value,
-                                        );
-                                      }}
-                                      className="w-full rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2.5 py-1.5 text-xs text-main outline-none focus:border-[var(--accent)]"
-                                      placeholder="gemini-2.5-flash"
-                                      required
-                                    />
+                                    <div className="relative">
+                                      <input
+                                        type="text"
+                                        maxLength={
+                                          RUNTIME_MODEL_NAME_MAX_LENGTH
+                                        }
+                                        value={geminiImageModelInput}
+                                        onChange={(event) => {
+                                          setGeminiImageModelInput(
+                                            event.target.value,
+                                          );
+                                        }}
+                                        onFocus={() => {
+                                          setActiveRuntimeModelField(
+                                            "geminiImageModel",
+                                          );
+                                        }}
+                                        onBlur={() => {
+                                          setActiveRuntimeModelField(
+                                            (current) =>
+                                              current === "geminiImageModel"
+                                                ? null
+                                                : current,
+                                          );
+                                        }}
+                                        className="w-full rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2.5 py-1.5 text-xs text-main outline-none focus:border-[var(--accent)]"
+                                        placeholder="gemini-2.5-flash"
+                                        autoComplete="off"
+                                        required
+                                      />
+
+                                      {activeRuntimeModelField ===
+                                      "geminiImageModel" ? (
+                                        <div className="absolute z-20 mt-1 max-h-44 w-full overflow-y-auto rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] shadow-lg">
+                                          {geminiImageModelSuggestions.length >
+                                          0 ? (
+                                            geminiImageModelSuggestions.map(
+                                              (suggestion) => (
+                                                <button
+                                                  key={`gemini-image-suggestion-${suggestion}`}
+                                                  type="button"
+                                                  onMouseDown={(event) => {
+                                                    event.preventDefault();
+                                                  }}
+                                                  onClick={() => {
+                                                    setGeminiImageModelInput(
+                                                      suggestion,
+                                                    );
+                                                    setActiveRuntimeModelField(
+                                                      null,
+                                                    );
+                                                  }}
+                                                  className="block w-full px-2.5 py-1.5 text-left text-xs text-main transition hover:bg-[var(--surface-2)]"
+                                                >
+                                                  {suggestion}
+                                                </button>
+                                              ),
+                                            )
+                                          ) : (
+                                            <p className="px-2.5 py-2 text-[0.72rem] text-muted">
+                                              No saved model suggestions yet.
+                                            </p>
+                                          )}
+                                        </div>
+                                      ) : null}
+                                    </div>
 
                                     <p className="text-[0.72rem] text-muted">
-                                      Max {RUNTIME_MODEL_NAME_MAX_LENGTH} characters.
+                                      Max {RUNTIME_MODEL_NAME_MAX_LENGTH}{" "}
+                                      characters.
                                     </p>
                                   </div>
                                 </article>
                               </>
+                            )}
+                          </div>
+                        </article>
+
+                        <article className="surface-glass mt-4 rounded-3xl p-5">
+                          <div className="flex flex-wrap items-end justify-between gap-3">
+                            <div>
+                              <h3 className="text-lg font-semibold text-main">
+                                System prompts
+                              </h3>
+                              <p className="text-sm text-muted">
+                                Edit AI instruction templates used by topic,
+                                slide, and image generation flows.
+                              </p>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void fetchSystemPrompts();
+                                }}
+                                disabled={
+                                  !session ||
+                                  isSystemPromptsLoading ||
+                                  savingSystemPromptKey !== null
+                                }
+                                aria-label="Reload system prompts"
+                                title="Reload system prompts"
+                                className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] text-main transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {isSystemPromptsLoading ? (
+                                  <Loader2
+                                    className="size-4 animate-spin"
+                                    aria-hidden="true"
+                                  />
+                                ) : (
+                                  <RefreshCw
+                                    className="size-4"
+                                    aria-hidden="true"
+                                  />
+                                )}
+                                <span className="sr-only">
+                                  Reload system prompts
+                                </span>
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2">
+                            {showSystemPromptsSkeleton ? (
+                              Array.from({ length: 4 }).map((_, index) => (
+                                <article
+                                  key={`system-prompt-skeleton-${index}`}
+                                  className="h-full rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3"
+                                >
+                                  <SkeletonBlock className="h-4 w-48" />
+                                  <SkeletonBlock className="mt-2 h-3 w-3/4" />
+                                  <SkeletonBlock className="mt-4 h-32 w-full" />
+                                  <SkeletonBlock className="mt-3 h-8 w-28" />
+                                </article>
+                              ))
+                            ) : systemPrompts.length === 0 ? (
+                              <p className="col-span-full rounded-xl border border-dashed border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-4 text-sm text-muted">
+                                No system prompts found.
+                              </p>
+                            ) : (
+                              systemPrompts.map((prompt) => {
+                                const draftValue =
+                                  systemPromptInputs[prompt.key] ??
+                                  prompt.content;
+                                const normalizedDraftValue = draftValue.trim();
+                                const hasChanges =
+                                  normalizedDraftValue !==
+                                  prompt.content.trim();
+                                const isSavingPrompt =
+                                  savingSystemPromptKey === prompt.key;
+
+                                return (
+                                  <article
+                                    key={prompt.key}
+                                    className="h-full rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3"
+                                  >
+                                    <div className="flex flex-wrap items-start justify-between gap-3">
+                                      <div className="min-w-0 flex-1 px-1 py-0.5">
+                                        <h4 className="text-xs font-semibold tracking-wide text-main uppercase">
+                                          {prompt.title}
+                                        </h4>
+                                        <p className="mt-0.5 text-[0.72rem] text-muted">
+                                          {prompt.description}
+                                        </p>
+                                        <p className="mt-1 text-[0.7rem] text-muted">
+                                          Key:{" "}
+                                          <span className="font-mono text-main">
+                                            {prompt.key}
+                                          </span>
+                                        </p>
+                                      </div>
+
+                                      <div className="flex flex-wrap items-center gap-2">
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            void handleSaveSystemPrompt(
+                                              prompt.key,
+                                            );
+                                          }}
+                                          disabled={
+                                            isSystemPromptsLoading ||
+                                            savingSystemPromptKey !== null ||
+                                            !normalizedDraftValue ||
+                                            !hasChanges
+                                          }
+                                          className="inline-flex items-center gap-2 rounded-lg border border-[var(--accent)] bg-[var(--accent-soft)] px-3 py-1.5 text-xs font-semibold text-main transition hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+                                        >
+                                          {isSavingPrompt ? (
+                                            <Loader2
+                                              className="size-3.5 animate-spin"
+                                              aria-hidden="true"
+                                            />
+                                          ) : (
+                                            <Save
+                                              className="size-3.5"
+                                              aria-hidden="true"
+                                            />
+                                          )}
+                                          {isSavingPrompt
+                                            ? "Saving"
+                                            : "Save prompt"}
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    <textarea
+                                      value={draftValue}
+                                      onChange={(event) => {
+                                        handleSystemPromptInputChange(
+                                          prompt.key,
+                                          event.target.value,
+                                        );
+                                      }}
+                                      rows={8}
+                                      className="mt-3 w-full min-h-[11rem] resize-y rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-xs leading-6 text-main outline-none focus:border-[var(--accent)]"
+                                    />
+
+                                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-[0.72rem] text-muted">
+                                      <p>
+                                        Updated: {formatDate(prompt.updatedAt)}
+                                      </p>
+                                      <p>
+                                        {normalizedDraftValue.length} characters
+                                      </p>
+                                    </div>
+                                  </article>
+                                );
+                              })
                             )}
                           </div>
                         </article>
@@ -2706,7 +4044,7 @@ export default function Home() {
                               </h3>
                             </div>
 
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                               <input
                                 value={userSearch}
                                 onChange={(event) => {
@@ -2715,6 +4053,37 @@ export default function Home() {
                                 placeholder="Search username, name, surname..."
                                 className="w-48 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
                               />
+
+                              <select
+                                value={userRegistrationFilter}
+                                onChange={(event) => {
+                                  setUserRegistrationFilter(
+                                    event.target
+                                      .value as UserRegistrationFilter,
+                                  );
+                                }}
+                                className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none focus:border-[var(--accent)]"
+                              >
+                                <option value="all">All users</option>
+                                <option value="registered">Registered</option>
+                                <option value="unregistered">
+                                  Not registered
+                                </option>
+                              </select>
+
+                              <select
+                                value={userSortOrder}
+                                onChange={(event) => {
+                                  setUserSortOrder(
+                                    event.target.value as SortOrder,
+                                  );
+                                }}
+                                className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none focus:border-[var(--accent)]"
+                              >
+                                <option value="desc">Newest first</option>
+                                <option value="asc">Oldest first</option>
+                              </select>
+
                               <input
                                 type="number"
                                 min={1}
@@ -2779,10 +4148,18 @@ export default function Home() {
                             <div className="mt-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-xs text-muted">
                               <div className="flex flex-wrap items-center justify-between gap-2">
                                 <p>
-                                  Sync job #{profileSyncJob.id}: {profileSyncJob.status} - {profileSyncJob.processed}/{profileSyncJob.totalUsers} ({profileSyncJob.progressPercent.toFixed(1)}%)
+                                  Sync job #{profileSyncJob.id}:{" "}
+                                  {profileSyncJob.status} -{" "}
+                                  {profileSyncJob.processed}/
+                                  {profileSyncJob.totalUsers} (
+                                  {profileSyncJob.progressPercent.toFixed(1)}%)
                                 </p>
                                 <p>
-                                  profile fields {profileSyncJob.profileFieldsUpdated} | updated {profileSyncJob.updated} | deactivated {profileSyncJob.deactivated} | failed {profileSyncJob.failed}
+                                  profile fields{" "}
+                                  {profileSyncJob.profileFieldsUpdated} |
+                                  updated {profileSyncJob.updated} | deactivated{" "}
+                                  {profileSyncJob.deactivated} | failed{" "}
+                                  {profileSyncJob.failed}
                                 </p>
                               </div>
                             </div>
@@ -2794,6 +4171,7 @@ export default function Home() {
                                 <tr>
                                   <th className="px-3 py-2">User</th>
                                   <th className="px-3 py-2">Telegram</th>
+                                  <th className="px-3 py-2">Joined</th>
                                   <th className="px-3 py-2">Total</th>
                                   <th className="px-3 py-2">Last generation</th>
                                 </tr>
@@ -2812,6 +4190,9 @@ export default function Home() {
                                           </td>
                                           <td className="px-3 py-2">
                                             <SkeletonBlock className="h-4 w-28" />
+                                          </td>
+                                          <td className="px-3 py-2">
+                                            <SkeletonBlock className="h-4 w-32" />
                                           </td>
                                           <td className="px-3 py-2">
                                             <SkeletonBlock className="h-4 w-10" />
@@ -2856,10 +4237,7 @@ export default function Home() {
 
                                             <div>
                                               <p className="font-medium">
-                                                {[
-                                                  user.firstName,
-                                                  user.lastName,
-                                                ]
+                                                {[user.firstName, user.lastName]
                                                   .filter(Boolean)
                                                   .join(" ") || "Unknown user"}
                                               </p>
@@ -2882,6 +4260,9 @@ export default function Home() {
                                         </td>
                                         <td className="px-3 py-2 text-main">
                                           {user.telegramId}
+                                        </td>
+                                        <td className="px-3 py-2 text-main">
+                                          {formatDate(user.createdAt)}
                                         </td>
                                         <td className="px-3 py-2 text-main">
                                           {user.totalGenerations}
@@ -2951,7 +4332,7 @@ export default function Home() {
                               </p>
                             </div>
 
-                            <div className="flex gap-2">
+                            <div className="flex flex-wrap gap-2">
                               <select
                                 value={presentationStatus}
                                 onChange={(event) => {
@@ -2966,6 +4347,35 @@ export default function Home() {
                                 <option value="pending">Pending</option>
                                 <option value="completed">Completed</option>
                                 <option value="failed">Failed</option>
+                              </select>
+
+                              <select
+                                value={presentationLanguage}
+                                onChange={(event) => {
+                                  setPresentationLanguage(
+                                    event.target
+                                      .value as PresentationLanguageFilter,
+                                  );
+                                }}
+                                className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none focus:border-[var(--accent)]"
+                              >
+                                <option value="all">All languages</option>
+                                <option value="uz">Uzbek</option>
+                                <option value="ru">Russian</option>
+                                <option value="en">English</option>
+                              </select>
+
+                              <select
+                                value={presentationSortOrder}
+                                onChange={(event) => {
+                                  setPresentationSortOrder(
+                                    event.target.value as SortOrder,
+                                  );
+                                }}
+                                className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none focus:border-[var(--accent)]"
+                              >
+                                <option value="desc">Newest first</option>
+                                <option value="asc">Oldest first</option>
                               </select>
 
                               <input
@@ -3247,6 +4657,7 @@ export default function Home() {
                                 onSubmit={handleBroadcast}
                               >
                                 <textarea
+                                  ref={broadcastMessageInputRef}
                                   value={broadcastMessage}
                                   onChange={(event) => {
                                     setBroadcastMessage(event.target.value);
@@ -3257,6 +4668,143 @@ export default function Home() {
                                   className="w-full resize-y rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-main outline-none placeholder:text-[var(--text-muted)] focus:border-[var(--accent)]"
                                   required
                                 />
+
+                                <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] p-2">
+                                  <button
+                                    type="button"
+                                    onMouseDown={(event) => {
+                                      event.preventDefault();
+                                    }}
+                                    onClick={() => {
+                                      applyBroadcastFormatting("bold");
+                                    }}
+                                    disabled={isBroadcastSending}
+                                    aria-label="Apply bold formatting"
+                                    title="Bold (**text**)"
+                                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] px-2 text-xs text-main transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <Bold
+                                      className="size-3.5"
+                                      aria-hidden="true"
+                                    />
+                                    Bold
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onMouseDown={(event) => {
+                                      event.preventDefault();
+                                    }}
+                                    onClick={() => {
+                                      applyBroadcastFormatting("italic");
+                                    }}
+                                    disabled={isBroadcastSending}
+                                    aria-label="Apply italic formatting"
+                                    title="Italic (__text__)"
+                                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] px-2 text-xs text-main transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <Italic
+                                      className="size-3.5"
+                                      aria-hidden="true"
+                                    />
+                                    Italic
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onMouseDown={(event) => {
+                                      event.preventDefault();
+                                    }}
+                                    onClick={() => {
+                                      applyBroadcastFormatting("code");
+                                    }}
+                                    disabled={isBroadcastSending}
+                                    aria-label="Apply code formatting"
+                                    title="Code (`text`)"
+                                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] px-2 text-xs text-main transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <Code2
+                                      className="size-3.5"
+                                      aria-hidden="true"
+                                    />
+                                    Code
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onMouseDown={(event) => {
+                                      event.preventDefault();
+                                    }}
+                                    onClick={() => {
+                                      applyBroadcastFormatting("link");
+                                    }}
+                                    disabled={isBroadcastSending}
+                                    aria-label="Apply link formatting"
+                                    title="Link ([text](https://...))"
+                                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] px-2 text-xs text-main transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <Link2
+                                      className="size-3.5"
+                                      aria-hidden="true"
+                                    />
+                                    Link
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onMouseDown={(event) => {
+                                      event.preventDefault();
+                                    }}
+                                    onClick={() => {
+                                      applyBroadcastFormatting("spoiler");
+                                    }}
+                                    disabled={isBroadcastSending}
+                                    aria-label="Apply spoiler formatting"
+                                    title="Spoiler (||text||)"
+                                    className="inline-flex h-8 items-center gap-1 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] px-2 text-xs text-main transition hover:border-[var(--accent)] disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    <EyeOff
+                                      className="size-3.5"
+                                      aria-hidden="true"
+                                    />
+                                    Spoiler
+                                  </button>
+                                </div>
+
+                                <p className="text-xs text-muted">
+                                  Select text in the message box, then click a
+                                  formatting button. Links must use
+                                  <span className="mx-1 font-medium text-main">
+                                    http://
+                                  </span>
+                                  or
+                                  <span className="mx-1 font-medium text-main">
+                                    https://
+                                  </span>
+                                  .
+                                </p>
+
+                                <div className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] p-3">
+                                  <p className="text-[11px] font-semibold tracking-wide text-muted uppercase">
+                                    Preview
+                                  </p>
+
+                                  {broadcastMessage.trim() ? (
+                                    <div
+                                      className={cn(
+                                        "mt-2",
+                                        BROADCAST_FORMATTED_TEXT_CLASS,
+                                      )}
+                                      dangerouslySetInnerHTML={{
+                                        __html: broadcastMessagePreviewHtml,
+                                      }}
+                                    />
+                                  ) : (
+                                    <p className="mt-2 text-sm text-muted">
+                                      Type a message to preview formatting.
+                                    </p>
+                                  )}
+                                </div>
 
                                 <div className="flex flex-wrap items-center justify-between gap-2">
                                   <p className="text-xs text-muted">
@@ -3342,7 +4890,7 @@ export default function Home() {
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    void fetchBroadcastHistory();
+                                    void fetchBroadcastCurrentPage();
                                   }}
                                   disabled={
                                     !session || isBroadcastHistoryLoading
@@ -3368,70 +4916,120 @@ export default function Home() {
                                 </button>
                               </div>
 
-                              <div className="mt-3 max-h-[30rem] space-y-3 overflow-y-auto pr-1">
-                                {isBroadcastHistoryLoading ? (
-                                  Array.from({ length: 3 }).map((_, index) => (
-                                    <div
-                                      key={`broadcast-history-skeleton-${index}`}
-                                      className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] p-3"
-                                    >
-                                      <SkeletonBlock className="h-3 w-28" />
-                                      <SkeletonBlock className="mt-2 h-4 w-full" />
-                                      <SkeletonBlock className="mt-3 h-20 w-full rounded-xl" />
-                                    </div>
-                                  ))
-                                ) : broadcastHistory.length === 0 ? (
-                                  <p className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-4 text-sm text-muted">
-                                    No broadcast messages yet.
-                                  </p>
-                                ) : (
-                                  broadcastHistory.map((item) => (
-                                    <article
-                                      key={item.id}
-                                      className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] p-3"
-                                    >
-                                      <div className="flex flex-wrap items-center justify-between gap-2">
-                                        <p className="text-xs text-muted">
-                                          {formatDate(item.createdAt)}
-                                        </p>
-                                        <p className="text-xs text-muted">
-                                          by{" "}
-                                          {item.adminUsername
-                                            ? `@${item.adminUsername}`
-                                            : (item.adminName ??
-                                              "Unknown admin")}
-                                        </p>
-                                      </div>
+                              <div className="mt-3 space-y-3">
+                                <div className="max-h-[30rem] space-y-3 overflow-y-auto pr-1">
+                                  {isBroadcastHistoryLoading ? (
+                                    Array.from({ length: 3 }).map(
+                                      (_, index) => (
+                                        <div
+                                          key={`broadcast-history-skeleton-${index}`}
+                                          className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] p-3"
+                                        >
+                                          <SkeletonBlock className="h-3 w-28" />
+                                          <SkeletonBlock className="mt-2 h-4 w-full" />
+                                          <SkeletonBlock className="mt-3 h-20 w-full rounded-xl" />
+                                        </div>
+                                      ),
+                                    )
+                                  ) : broadcastHistory.length === 0 ? (
+                                    <p className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-4 text-sm text-muted">
+                                      No broadcast messages yet.
+                                    </p>
+                                  ) : (
+                                    broadcastHistory.map((item) => (
+                                      <article
+                                        key={item.id}
+                                        className="rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-1)] p-3"
+                                      >
+                                        <div className="flex flex-wrap items-center justify-between gap-2">
+                                          <p className="text-xs text-muted">
+                                            {formatDate(item.createdAt)}
+                                          </p>
+                                          <p className="text-xs text-muted">
+                                            by{" "}
+                                            {item.adminUsername
+                                              ? `@${item.adminUsername}`
+                                              : (item.adminName ??
+                                                "Unknown admin")}
+                                          </p>
+                                        </div>
 
-                                      <p className="mt-2 text-sm text-main whitespace-pre-wrap">
-                                        {item.message}
-                                      </p>
-
-                                      {item.imageDataUrl ? (
-                                        <img
-                                          src={item.imageDataUrl}
-                                          alt={
-                                            item.imageFileName
-                                              ? `Attachment ${item.imageFileName}`
-                                              : "Broadcast attachment"
-                                          }
-                                          className="mt-3 max-h-56 w-full rounded-xl border border-[var(--surface-border)] object-cover"
+                                        <div
+                                          className={cn(
+                                            "mt-2",
+                                            BROADCAST_FORMATTED_TEXT_CLASS,
+                                          )}
+                                          dangerouslySetInnerHTML={{
+                                            __html:
+                                              formatBroadcastMessageToHtml(
+                                                item.message,
+                                              ),
+                                          }}
                                         />
-                                      ) : null}
 
-                                      <p className="mt-3 text-xs text-muted">
-                                        Recipients: {item.recipients}, sent:{" "}
-                                        {item.sent}, failed: {item.failed},
-                                        pending:{" "}
-                                        {getPendingRecipientsCount(
-                                          item.recipients,
-                                          item.sent,
-                                          item.failed,
-                                        )}
-                                      </p>
-                                    </article>
-                                  ))
-                                )}
+                                        {item.imageDataUrl ? (
+                                          <img
+                                            src={item.imageDataUrl}
+                                            alt={
+                                              item.imageFileName
+                                                ? `Attachment ${item.imageFileName}`
+                                                : "Broadcast attachment"
+                                            }
+                                            className="mt-3 max-h-56 w-full rounded-xl border border-[var(--surface-border)] object-cover"
+                                          />
+                                        ) : null}
+
+                                        <p className="mt-3 text-xs text-muted">
+                                          Recipients: {item.recipients}, sent:{" "}
+                                          {item.sent}, failed: {item.failed},
+                                          pending:{" "}
+                                          {getPendingRecipientsCount(
+                                            item.recipients,
+                                            item.sent,
+                                            item.failed,
+                                          )}
+                                        </p>
+                                      </article>
+                                    ))
+                                  )}
+                                </div>
+
+                                <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--surface-border)] pt-3 text-xs text-muted">
+                                  <p>
+                                    Page {broadcastPage} -{" "}
+                                    {broadcastHistory.length} shown of{" "}
+                                    {broadcastTotalCount}
+                                  </p>
+                                  <div className="flex items-center gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        void fetchBroadcastPreviousPage();
+                                      }}
+                                      disabled={
+                                        isBroadcastHistoryLoading ||
+                                        broadcastPage <= 1
+                                      }
+                                      className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2 py-1 text-main disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      Prev
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        void fetchBroadcastNextPage();
+                                      }}
+                                      disabled={
+                                        isBroadcastHistoryLoading ||
+                                        !broadcastPageInfo.hasNextPage ||
+                                        !broadcastPageInfo.endCursor
+                                      }
+                                      className="rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2 py-1 text-main disabled:cursor-not-allowed disabled:opacity-60"
+                                    >
+                                      Next
+                                    </button>
+                                  </div>
+                                </div>
                               </div>
                             </div>
                           </div>
