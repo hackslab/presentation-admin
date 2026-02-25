@@ -130,9 +130,15 @@ interface BroadcastHistoryItem {
 interface RuntimeSettingsResponse {
   mainThemePromptCharacterLimit: number;
   freePresentationGenerationLimit: number;
+  geminiModel: string;
+  geminiImageModel: string;
 }
 
+type UserProfileSyncJobStatus = "queued" | "running" | "completed" | "failed";
+
 interface SyncUserProfileImagesResponse {
+  id: number;
+  status: UserProfileSyncJobStatus;
   totalUsers: number;
   processed: number;
   profileFieldsUpdated: number;
@@ -142,11 +148,14 @@ interface SyncUserProfileImagesResponse {
   noPhoto: number;
   skippedRecentlyChecked: number;
   skippedConfigMissing: number;
+  skippedInactive: number;
+  deactivated: number;
   failed: number;
-  failures: Array<{
-    telegramId: string;
-    reason: string;
-  }>;
+  progressPercent: number;
+  createdAt: string;
+  startedAt: string | null;
+  finishedAt: string | null;
+  updatedAt: string;
 }
 
 interface ConnectionPageInfo {
@@ -186,6 +195,7 @@ const MAIN_THEME_PROMPT_LIMIT_MIN = 10;
 const MAIN_THEME_PROMPT_LIMIT_MAX = 4096;
 const FREE_PRESENTATION_GENERATION_LIMIT_MIN = 1;
 const FREE_PRESENTATION_GENERATION_LIMIT_MAX = 100;
+const RUNTIME_MODEL_NAME_MAX_LENGTH = 120;
 const BROADCAST_IMAGE_MAX_BYTES = 5 * 1024 * 1024;
 const EMPTY_CONNECTION_PAGE_INFO: ConnectionPageInfo = {
   hasNextPage: false,
@@ -436,6 +446,8 @@ export default function Home() {
   const [isUsersLoading, setIsUsersLoading] = useState(true);
   const [isSyncingUserProfileImages, setIsSyncingUserProfileImages] =
     useState(false);
+  const [profileSyncJob, setProfileSyncJob] =
+    useState<SyncUserProfileImagesResponse | null>(null);
   const [isPresentationsLoading, setIsPresentationsLoading] = useState(true);
   const [isSettingsLoading, setIsSettingsLoading] = useState(true);
   const [isAdminsLoading, setIsAdminsLoading] = useState(true);
@@ -488,6 +500,8 @@ export default function Home() {
     freePresentationGenerationLimitInput,
     setFreePresentationGenerationLimitInput,
   ] = useState("");
+  const [geminiModelInput, setGeminiModelInput] = useState("");
+  const [geminiImageModelInput, setGeminiImageModelInput] = useState("");
   const [isSavingRuntimeSettings, setIsSavingRuntimeSettings] = useState(false);
 
   const [adminName, setAdminName] = useState("");
@@ -517,6 +531,8 @@ export default function Home() {
 
   const usersRequestVersionRef = useRef(0);
   const presentationsRequestVersionRef = useRef(0);
+  const profileSyncCompletionToastJobIdRef = useRef<number | null>(null);
+  const profileSyncWasRunningRef = useRef(false);
   const lastDashboardPathRef = useRef<string | null>(null);
   const broadcastImageInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -653,6 +669,25 @@ export default function Home() {
     const after = usersAfterHistory[usersPage - 1] ?? null;
     await fetchUsersPage({ page: usersPage, after });
   }, [fetchUsersPage, usersAfterHistory, usersPage]);
+
+  const fetchLatestProfileSyncJob = useCallback(async () => {
+    const data = await apiRequest<SyncUserProfileImagesResponse | null>(
+      "/admin/users/profile-images/sync/latest",
+    );
+
+    setProfileSyncJob(data);
+
+    if (!data) {
+      setIsSyncingUserProfileImages(false);
+      profileSyncWasRunningRef.current = false;
+      return null;
+    }
+
+    const running = data.status === "queued" || data.status === "running";
+    setIsSyncingUserProfileImages(running);
+
+    return data;
+  }, [apiRequest]);
 
   const fetchUsersNextPage = useCallback(async () => {
     if (!usersPageInfo.hasNextPage || !usersPageInfo.endCursor) {
@@ -803,6 +838,8 @@ export default function Home() {
       setFreePresentationGenerationLimitInput(
         `${data.freePresentationGenerationLimit}`,
       );
+      setGeminiModelInput(data.geminiModel);
+      setGeminiImageModelInput(data.geminiImageModel);
     } finally {
       setIsSettingsLoading(false);
     }
@@ -862,6 +899,7 @@ export default function Home() {
       presentationFetchTask,
       ...(pathname.startsWith("/settings") ? [fetchRuntimeSettings()] : []),
       ...(pathname.startsWith("/users") ? [fetchUsersCurrentPage()] : []),
+      ...(pathname.startsWith("/users") ? [fetchLatestProfileSyncJob()] : []),
       ...(pathname.startsWith("/admins") && currentAdminRole === "SUPERADMIN"
         ? [fetchAdmins()]
         : []),
@@ -888,6 +926,7 @@ export default function Home() {
     fetchPresentationsFirstPage,
     fetchRuntimeSettings,
     fetchUsersCurrentPage,
+    fetchLatestProfileSyncJob,
     currentAdminRole,
     session?.accessToken,
   ]);
@@ -1095,6 +1134,69 @@ export default function Home() {
     if (
       !isHydrated ||
       !session?.accessToken ||
+      !pathname.startsWith("/users")
+    ) {
+      return;
+    }
+
+    let disposed = false;
+
+    const pollLatestProfileSyncJob = async () => {
+      try {
+        const latestJob = await fetchLatestProfileSyncJob();
+
+        if (disposed || !latestJob) {
+          return;
+        }
+
+        const isRunning =
+          latestJob.status === "queued" || latestJob.status === "running";
+
+        if (isRunning) {
+          profileSyncWasRunningRef.current = true;
+          return;
+        }
+
+        if (
+          profileSyncWasRunningRef.current &&
+          profileSyncCompletionToastJobIdRef.current !== latestJob.id
+        ) {
+          profileSyncCompletionToastJobIdRef.current = latestJob.id;
+          profileSyncWasRunningRef.current = false;
+
+          toast.success(
+            `Profile sync done. Profile fields updated: ${latestJob.profileFieldsUpdated}, updated: ${latestJob.updated}, unchanged: ${latestJob.unchanged}, removed: ${latestJob.removed}, no photo: ${latestJob.noPhoto}, deactivated: ${latestJob.deactivated}, failed: ${latestJob.failed}.`,
+          );
+
+          await fetchUsersCurrentPage();
+        }
+      } catch {
+        // ignore polling errors
+      }
+    };
+
+    void pollLatestProfileSyncJob();
+
+    const intervalId = window.setInterval(() => {
+      void pollLatestProfileSyncJob();
+    }, 2500);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    fetchLatestProfileSyncJob,
+    fetchUsersCurrentPage,
+    isHydrated,
+    pathname,
+    session?.accessToken,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isHydrated ||
+      !session?.accessToken ||
       !pathname.startsWith("/presentations")
     ) {
       return;
@@ -1277,7 +1379,7 @@ export default function Home() {
         eyebrow: "Configuration",
         title: "Generation Settings",
         description:
-          "Manage runtime configuration for generation behavior and prompt validation.",
+          "Manage runtime limits, prompt validation, and AI model routing.",
       },
       users: {
         eyebrow: "User Intelligence",
@@ -1377,6 +1479,9 @@ export default function Home() {
     setUsersAfterHistory([null]);
     setUsersPageInfo(EMPTY_CONNECTION_PAGE_INFO);
     setIsSyncingUserProfileImages(false);
+    setProfileSyncJob(null);
+    profileSyncWasRunningRef.current = false;
+    profileSyncCompletionToastJobIdRef.current = null;
     setOverviewUsers([]);
     setHasLoadedOverviewUsers(false);
     setPresentations([]);
@@ -1419,6 +1524,8 @@ export default function Home() {
     setRuntimeSettings(null);
     setMainThemePromptCharacterLimitInput("");
     setFreePresentationGenerationLimitInput("");
+    setGeminiModelInput("");
+    setGeminiImageModelInput("");
     setIsSavingRuntimeSettings(false);
     toast.success("Session cleared.");
     router.replace("/login");
@@ -1446,6 +1553,7 @@ export default function Home() {
 
   const handleSyncAllUserProfileImages = async () => {
     setIsSyncingUserProfileImages(true);
+    profileSyncWasRunningRef.current = true;
 
     try {
       const result = await apiRequest<SyncUserProfileImagesResponse>(
@@ -1455,15 +1563,30 @@ export default function Home() {
         },
       );
 
-      toast.success(
-        `Profile sync done. Profile fields updated: ${result.profileFieldsUpdated}, image updated: ${result.updated}, unchanged: ${result.unchanged}, removed: ${result.removed}, no photo: ${result.noPhoto}, failed: ${result.failed}.`,
-      );
+      setProfileSyncJob(result);
+
+      const isRunning =
+        result.status === "queued" || result.status === "running";
+      setIsSyncingUserProfileImages(isRunning);
+
+      if (isRunning) {
+        profileSyncWasRunningRef.current = true;
+        toast.success(
+          `Profile sync job #${result.id} started. Active users to sync: ${result.totalUsers}.`,
+        );
+      } else {
+        profileSyncWasRunningRef.current = false;
+        profileSyncCompletionToastJobIdRef.current = result.id;
+        toast.success(
+          `Profile sync done. Profile fields updated: ${result.profileFieldsUpdated}, updated: ${result.updated}, unchanged: ${result.unchanged}, removed: ${result.removed}, no photo: ${result.noPhoto}, deactivated: ${result.deactivated}, failed: ${result.failed}.`,
+        );
+      }
 
       await fetchUsersCurrentPage();
     } catch (error) {
       toast.error(toErrorMessage(error));
-    } finally {
       setIsSyncingUserProfileImages(false);
+      profileSyncWasRunningRef.current = false;
     }
   };
 
@@ -1574,6 +1697,8 @@ export default function Home() {
       setFreePresentationGenerationLimitInput(
         `${updated.freePresentationGenerationLimit}`,
       );
+      setGeminiModelInput(updated.geminiModel);
+      setGeminiImageModelInput(updated.geminiImageModel);
       toast.success(successMessage);
     } catch (error) {
       toast.error(toErrorMessage(error));
@@ -1621,10 +1746,39 @@ export default function Home() {
       return;
     }
 
+    const nextGeminiModel = geminiModelInput.trim();
+    const nextGeminiImageModel = geminiImageModelInput.trim();
+
+    if (!nextGeminiModel) {
+      toast.error("Gemini model is required.");
+      return;
+    }
+
+    if (nextGeminiModel.length > RUNTIME_MODEL_NAME_MAX_LENGTH) {
+      toast.error(
+        `Gemini model must be at most ${RUNTIME_MODEL_NAME_MAX_LENGTH} characters.`,
+      );
+      return;
+    }
+
+    if (!nextGeminiImageModel) {
+      toast.error("Gemini image model is required.");
+      return;
+    }
+
+    if (nextGeminiImageModel.length > RUNTIME_MODEL_NAME_MAX_LENGTH) {
+      toast.error(
+        `Gemini image model must be at most ${RUNTIME_MODEL_NAME_MAX_LENGTH} characters.`,
+      );
+      return;
+    }
+
     await saveRuntimeSettings(
       {
         mainThemePromptCharacterLimit: parsedMainThemeLimit,
         freePresentationGenerationLimit: parsedFreeGenerationLimit,
+        geminiModel: nextGeminiModel,
+        geminiImageModel: nextGeminiImageModel,
       },
       "Runtime settings updated.",
     );
@@ -2278,7 +2432,8 @@ export default function Home() {
                                 Runtime settings
                               </h3>
                               <p className="text-sm text-muted">
-                                Manage generation limits used by Telegram flow.
+                                Manage generation limits and AI models used by
+                                Telegram generation flow.
                               </p>
                             </div>
 
@@ -2321,7 +2476,9 @@ export default function Home() {
                                   isSettingsLoading ||
                                   !runtimeSettings ||
                                   !mainThemePromptCharacterLimitInput.trim() ||
-                                  !freePresentationGenerationLimitInput.trim()
+                                  !freePresentationGenerationLimitInput.trim() ||
+                                  !geminiModelInput.trim() ||
+                                  !geminiImageModelInput.trim()
                                 }
                                 aria-label={
                                   isSavingRuntimeSettings
@@ -2352,9 +2509,9 @@ export default function Home() {
                             </div>
                           </div>
 
-                          <div className="mt-4 grid gap-3 md:grid-cols-2">
+                          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                             {showSettingsSkeleton ? (
-                              Array.from({ length: 2 }).map((_, index) => (
+                              Array.from({ length: 4 }).map((_, index) => (
                                 <article
                                   key={`settings-skeleton-${index}`}
                                   className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3"
@@ -2456,6 +2613,82 @@ export default function Home() {
                                     </p>
                                   </div>
                                 </article>
+
+                                <article className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                                  <div>
+                                    <h4 className="text-xs font-semibold tracking-wide text-main uppercase">
+                                      Gemini model
+                                    </h4>
+                                    <p className="mt-0.5 text-[0.72rem] text-muted">
+                                      Model used for Gemini topic and slide
+                                      generation.
+                                    </p>
+                                  </div>
+
+                                  <div className="mt-2 space-y-2">
+                                    <p className="text-xs text-main">
+                                      Current: {" "}
+                                      <span className="font-semibold">
+                                        {runtimeSettings?.geminiModel ?? "-"}
+                                      </span>
+                                    </p>
+
+                                    <input
+                                      type="text"
+                                      maxLength={RUNTIME_MODEL_NAME_MAX_LENGTH}
+                                      value={geminiModelInput}
+                                      onChange={(event) => {
+                                        setGeminiModelInput(event.target.value);
+                                      }}
+                                      className="w-full rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2.5 py-1.5 text-xs text-main outline-none focus:border-[var(--accent)]"
+                                      placeholder="gemini-2.5-flash"
+                                      required
+                                    />
+
+                                    <p className="text-[0.72rem] text-muted">
+                                      Max {RUNTIME_MODEL_NAME_MAX_LENGTH} characters.
+                                    </p>
+                                  </div>
+                                </article>
+
+                                <article className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] p-3">
+                                  <div>
+                                    <h4 className="text-xs font-semibold tracking-wide text-main uppercase">
+                                      Gemini image model
+                                    </h4>
+                                    <p className="mt-0.5 text-[0.72rem] text-muted">
+                                      Model used for selecting slide-compatible
+                                      images.
+                                    </p>
+                                  </div>
+
+                                  <div className="mt-2 space-y-2">
+                                    <p className="text-xs text-main">
+                                      Current: {" "}
+                                      <span className="font-semibold">
+                                        {runtimeSettings?.geminiImageModel ?? "-"}
+                                      </span>
+                                    </p>
+
+                                    <input
+                                      type="text"
+                                      maxLength={RUNTIME_MODEL_NAME_MAX_LENGTH}
+                                      value={geminiImageModelInput}
+                                      onChange={(event) => {
+                                        setGeminiImageModelInput(
+                                          event.target.value,
+                                        );
+                                      }}
+                                      className="w-full rounded-lg border border-[var(--surface-border)] bg-[var(--surface-1)] px-2.5 py-1.5 text-xs text-main outline-none focus:border-[var(--accent)]"
+                                      placeholder="gemini-2.5-flash"
+                                      required
+                                    />
+
+                                    <p className="text-[0.72rem] text-muted">
+                                      Max {RUNTIME_MODEL_NAME_MAX_LENGTH} characters.
+                                    </p>
+                                  </div>
+                                </article>
                               </>
                             )}
                           </div>
@@ -2541,6 +2774,19 @@ export default function Home() {
                               </button>
                             </div>
                           </div>
+
+                          {profileSyncJob ? (
+                            <div className="mt-3 rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-xs text-muted">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p>
+                                  Sync job #{profileSyncJob.id}: {profileSyncJob.status} - {profileSyncJob.processed}/{profileSyncJob.totalUsers} ({profileSyncJob.progressPercent.toFixed(1)}%)
+                                </p>
+                                <p>
+                                  profile fields {profileSyncJob.profileFieldsUpdated} | updated {profileSyncJob.updated} | deactivated {profileSyncJob.deactivated} | failed {profileSyncJob.failed}
+                                </p>
+                              </div>
+                            </div>
+                          ) : null}
 
                           <div className="mt-4 overflow-hidden rounded-2xl border border-[var(--surface-border)]">
                             <table className="min-w-full text-sm">
