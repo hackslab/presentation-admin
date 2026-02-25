@@ -1936,7 +1936,8 @@ export default function Home() {
     }
 
     const maxValue = Math.max(dailyJoinedUsersMax, 1);
-    const chartBaseY = DAILY_JOINED_USERS_CHART_HEIGHT - 4;
+    const chartBaseY =
+      DAILY_JOINED_USERS_CHART_HEIGHT - DAILY_JOINED_USERS_CHART_BASE_OFFSET;
     const slotWidth = DAILY_JOINED_USERS_CHART_WIDTH / dailyJoinedUsersSeries.length;
     const minBarWidth = dailyJoinedUsersSeries.length > 45 ? 0.75 : 1.6;
     const barWidth = Math.max(Math.min(slotWidth * 0.72, 8), minBarWidth);
@@ -1951,7 +1952,8 @@ export default function Home() {
   }, [dailyJoinedUsersMax, dailyJoinedUsersSeries]);
 
   const dailyJoinedUsersChartGuides = useMemo(() => {
-    const chartBaseY = DAILY_JOINED_USERS_CHART_HEIGHT - 4;
+    const chartBaseY =
+      DAILY_JOINED_USERS_CHART_HEIGHT - DAILY_JOINED_USERS_CHART_BASE_OFFSET;
 
     return [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
       ratio,
@@ -1959,12 +1961,63 @@ export default function Home() {
     }));
   }, []);
 
+  const dailyJoinedUsersAverage = useMemo(() => {
+    if (dailyJoinedUsersSeries.length === 0) {
+      return 0;
+    }
+
+    return dailyJoinedUsersTotal / dailyJoinedUsersSeries.length;
+  }, [dailyJoinedUsersSeries, dailyJoinedUsersTotal]);
+
+  const dailyJoinedUsersAverageGuideY = useMemo(() => {
+    const chartBaseY =
+      DAILY_JOINED_USERS_CHART_HEIGHT - DAILY_JOINED_USERS_CHART_BASE_OFFSET;
+    const maxValue = Math.max(dailyJoinedUsersMax, 1);
+
+    return chartBaseY - (dailyJoinedUsersAverage / maxValue) * chartBaseY;
+  }, [dailyJoinedUsersAverage, dailyJoinedUsersMax]);
+
   const dailyJoinedUsersMiddlePoint =
     dailyJoinedUsersSeries[
       Math.floor((dailyJoinedUsersSeries.length - 1) / 2)
     ] ?? null;
   const dailyJoinedUsersLatestPoint =
     dailyJoinedUsersSeries[dailyJoinedUsersSeries.length - 1] ?? null;
+  const dailyJoinedUsersPreviousPoint =
+    dailyJoinedUsersSeries.length > 1
+      ? dailyJoinedUsersSeries[dailyJoinedUsersSeries.length - 2]
+      : null;
+
+  const dailyJoinedUsersTrendDelta =
+    dailyJoinedUsersLatestPoint && dailyJoinedUsersPreviousPoint
+      ? dailyJoinedUsersLatestPoint.count - dailyJoinedUsersPreviousPoint.count
+      : 0;
+
+  const dailyJoinedUsersTrendLabel = useMemo(() => {
+    if (!dailyJoinedUsersLatestPoint || !dailyJoinedUsersPreviousPoint) {
+      return "N/A";
+    }
+
+    if (dailyJoinedUsersTrendDelta === 0) {
+      return "Flat";
+    }
+
+    const direction = dailyJoinedUsersTrendDelta > 0 ? "Up" : "Down";
+    const absoluteDelta = Math.abs(dailyJoinedUsersTrendDelta);
+
+    if (dailyJoinedUsersPreviousPoint.count <= 0) {
+      return `${direction} ${absoluteDelta}`;
+    }
+
+    const percent =
+      (absoluteDelta / dailyJoinedUsersPreviousPoint.count) * 100;
+    return `${direction} ${percent.toFixed(1)}%`;
+  }, [
+    dailyJoinedUsersLatestPoint,
+    dailyJoinedUsersPreviousPoint,
+    dailyJoinedUsersTrendDelta,
+  ]);
+
   const joinedUsersPeakLabel = isJoinedUsersHourlyRange
     ? "Peak/hour"
     : "Peak/day";
@@ -3391,7 +3444,7 @@ export default function Home() {
                             </p>
                           ) : (
                             <>
-                              <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] p-2">
+                              <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] p-2.5">
                                 <svg
                                   viewBox={`0 0 ${DAILY_JOINED_USERS_CHART_WIDTH} ${DAILY_JOINED_USERS_CHART_HEIGHT}`}
                                   preserveAspectRatio="none"
@@ -3400,6 +3453,24 @@ export default function Home() {
                                   aria-label="Joined users column chart"
                                 >
                                   <defs>
+                                    <linearGradient
+                                      id="daily-joined-users-chart-bg"
+                                      x1="0"
+                                      y1="0"
+                                      x2="0"
+                                      y2="1"
+                                    >
+                                      <stop
+                                        offset="0%"
+                                        stopColor="var(--accent)"
+                                        stopOpacity="0.14"
+                                      />
+                                      <stop
+                                        offset="100%"
+                                        stopColor="var(--accent)"
+                                        stopOpacity="0.02"
+                                      />
+                                    </linearGradient>
                                     <linearGradient
                                       id="daily-joined-users-bar-fill"
                                       x1="0"
@@ -3420,6 +3491,14 @@ export default function Home() {
                                     </linearGradient>
                                   </defs>
 
+                                  <rect
+                                    x="0"
+                                    y="0"
+                                    width={DAILY_JOINED_USERS_CHART_WIDTH}
+                                    height={DAILY_JOINED_USERS_CHART_HEIGHT}
+                                    fill="url(#daily-joined-users-chart-bg)"
+                                  />
+
                                   {dailyJoinedUsersChartGuides.map((guide) => (
                                     <line
                                       key={`joined-users-guide-${guide.ratio}`}
@@ -3435,6 +3514,17 @@ export default function Home() {
                                       opacity={guide.ratio === 0 ? 0.9 : 0.55}
                                     />
                                   ))}
+
+                                  <line
+                                    x1="0"
+                                    y1={dailyJoinedUsersAverageGuideY}
+                                    x2={DAILY_JOINED_USERS_CHART_WIDTH}
+                                    y2={dailyJoinedUsersAverageGuideY}
+                                    stroke="var(--accent)"
+                                    strokeWidth="0.85"
+                                    strokeDasharray="2 2"
+                                    opacity="0.65"
+                                  />
 
                                   {dailyJoinedUsersBarPoints.map((point, index) => {
                                     const isPeak =
@@ -3463,6 +3553,13 @@ export default function Home() {
                                     );
                                   })}
                                 </svg>
+
+                                <div className="mt-2 flex items-center justify-between text-[0.66rem] text-muted">
+                                  <span>
+                                    Avg {isJoinedUsersHourlyRange ? "hour" : "day"}: {dailyJoinedUsersAverage.toFixed(1)}
+                                  </span>
+                                  <span>Trend: {dailyJoinedUsersTrendLabel}</span>
+                                </div>
                               </div>
 
                               <div className="flex items-center justify-between text-[0.72rem] text-muted">
@@ -3471,7 +3568,7 @@ export default function Home() {
                                 <span>{dailyJoinedUsersLatestPoint?.label ?? "-"}</span>
                               </div>
 
-                              <div className="grid grid-cols-3 gap-2 text-[0.72rem] text-muted">
+                              <div className="grid grid-cols-2 gap-2 text-[0.72rem] text-muted sm:grid-cols-5">
                                 <p>
                                   {joinedUsersPeakLabel}:{" "}
                                   <span className="text-main">
@@ -3482,6 +3579,18 @@ export default function Home() {
                                   {joinedUsersLatestLabel}:{" "}
                                   <span className="text-main">
                                     {dailyJoinedUsersLatestPoint?.count ?? 0}
+                                  </span>
+                                </p>
+                                <p>
+                                  Avg/{isJoinedUsersHourlyRange ? "hour" : "day"}:{" "}
+                                  <span className="text-main">
+                                    {dailyJoinedUsersAverage.toFixed(1)}
+                                  </span>
+                                </p>
+                                <p>
+                                  Trend:{" "}
+                                  <span className="text-main">
+                                    {dailyJoinedUsersTrendLabel}
                                   </span>
                                 </p>
                                 <p>
