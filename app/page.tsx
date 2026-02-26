@@ -101,6 +101,7 @@ interface PresentationMetadata {
   pageCount?: number;
   useImages?: boolean;
   fileName?: string;
+  fileSizeKb?: number;
   storageKey?: string;
   downloadUrl?: string;
 }
@@ -665,6 +666,19 @@ function formatDate(dateString: string | null | undefined): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(parsedDate);
+}
+
+function formatFileSizeMb(fileSizeKb: number | null | undefined): string {
+  if (typeof fileSizeKb !== "number" || !Number.isFinite(fileSizeKb)) {
+    return "-";
+  }
+
+  const fileSizeMb = fileSizeKb / 1024;
+
+  return `${new Intl.NumberFormat("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(fileSizeMb)} MB`;
 }
 
 function clampNumber(value: number, min: number, max: number): number {
@@ -6503,6 +6517,9 @@ export default function Home() {
                         </p>
                         <p className="mt-1 break-all">
                           File: {selectedPresentation.metadata?.fileName ?? "-"}
+                        </p>
+                        <p className="mt-1">
+                          File size: {formatFileSizeMb(selectedPresentation.metadata?.fileSizeKb)}
                         </p>
                         <p className="mt-1 break-all">
                           Download:{" "}
