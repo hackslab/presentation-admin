@@ -781,8 +781,10 @@ export default function Home() {
     useState<JoinedUsersRange>("30d");
   const [hasLoadedJoinedUserDates, setHasLoadedJoinedUserDates] =
     useState(false);
-  const [hasLoadedPresentationCreatedDates, setHasLoadedPresentationCreatedDates] =
-    useState(false);
+  const [
+    hasLoadedPresentationCreatedDates,
+    setHasLoadedPresentationCreatedDates,
+  ] = useState(false);
   const [cachedStatistics, setCachedStatistics] =
     useState<CachedStatistics | null>(null);
   const [presentations, setPresentations] = useState<PresentationRow[]>([]);
@@ -1991,7 +1993,9 @@ export default function Home() {
     DAILY_JOINED_USERS_CHART_PADDING_TOP -
     DAILY_JOINED_USERS_CHART_PADDING_BOTTOM;
 
-  const dailyJoinedUsersChartPoints = useMemo<DailyJoinedUsersChartPoint[]>(() => {
+  const dailyJoinedUsersChartPoints = useMemo<
+    DailyJoinedUsersChartPoint[]
+  >(() => {
     if (dailyJoinedUsersSeries.length === 0) {
       return [];
     }
@@ -2052,7 +2056,9 @@ export default function Home() {
   const dailyJoinedUsersAverageGuideY = useMemo(() => {
     const maxValue = Math.max(dailyJoinedUsersMax, 1);
 
-    return chartPlotBottomY - (dailyJoinedUsersAverage / maxValue) * chartPlotHeight;
+    return (
+      chartPlotBottomY - (dailyJoinedUsersAverage / maxValue) * chartPlotHeight
+    );
   }, [
     chartPlotBottomY,
     chartPlotHeight,
@@ -2070,7 +2076,9 @@ export default function Home() {
       return 0;
     }
 
-    return (dailyJoinedUsersActivePeriods / dailyJoinedUsersSeries.length) * 100;
+    return (
+      (dailyJoinedUsersActivePeriods / dailyJoinedUsersSeries.length) * 100
+    );
   }, [dailyJoinedUsersActivePeriods, dailyJoinedUsersSeries.length]);
 
   const dailyJoinedUsersMiddlePoint =
@@ -2123,8 +2131,7 @@ export default function Home() {
       return `${direction} ${absoluteDelta}`;
     }
 
-    const percent =
-      (absoluteDelta / dailyJoinedUsersPreviousPoint.count) * 100;
+    const percent = (absoluteDelta / dailyJoinedUsersPreviousPoint.count) * 100;
     return `${direction} ${percent.toFixed(1)}%`;
   }, [
     dailyJoinedUsersLatestPoint,
@@ -2239,7 +2246,9 @@ export default function Home() {
     [dailyGenerationsSeries],
   );
 
-  const dailyGenerationsChartPoints = useMemo<DailyJoinedUsersChartPoint[]>(() => {
+  const dailyGenerationsChartPoints = useMemo<
+    DailyJoinedUsersChartPoint[]
+  >(() => {
     if (dailyGenerationsSeries.length === 0) {
       return [];
     }
@@ -2300,7 +2309,9 @@ export default function Home() {
   const dailyGenerationsAverageGuideY = useMemo(() => {
     const maxValue = Math.max(dailyGenerationsMax, 1);
 
-    return chartPlotBottomY - (dailyGenerationsAverage / maxValue) * chartPlotHeight;
+    return (
+      chartPlotBottomY - (dailyGenerationsAverage / maxValue) * chartPlotHeight
+    );
   }, [
     chartPlotBottomY,
     chartPlotHeight,
@@ -2318,12 +2329,15 @@ export default function Home() {
       return 0;
     }
 
-    return (dailyGenerationsActivePeriods / dailyGenerationsSeries.length) * 100;
+    return (
+      (dailyGenerationsActivePeriods / dailyGenerationsSeries.length) * 100
+    );
   }, [dailyGenerationsActivePeriods, dailyGenerationsSeries.length]);
 
   const dailyGenerationsMiddlePoint =
-    dailyGenerationsSeries[Math.floor((dailyGenerationsSeries.length - 1) / 2)] ??
-    null;
+    dailyGenerationsSeries[
+      Math.floor((dailyGenerationsSeries.length - 1) / 2)
+    ] ?? null;
   const dailyGenerationsPeakPoint = useMemo(() => {
     if (dailyGenerationsSeries.length === 0) {
       return null;
@@ -3801,7 +3815,7 @@ export default function Home() {
                               No joined users or generations yet.
                             </p>
                           ) : (
-                            <div className="space-y-4">
+                            <div className="space-y-12">
                               {dailyJoinedUsersSeries.length === 0 ? (
                                 <p className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] px-3 py-2 text-sm text-muted">
                                   No joined users yet.
@@ -3811,7 +3825,9 @@ export default function Home() {
                                   <div className="flex items-center justify-between text-xs text-muted">
                                     <span>{joinedUsersChartLabel}</span>
                                     <span>
-                                      <NumberTicker value={dailyJoinedUsersTotal} />{" "}
+                                      <NumberTicker
+                                        value={dailyJoinedUsersTotal}
+                                      />{" "}
                                       total
                                     </span>
                                   </div>
@@ -3819,11 +3835,19 @@ export default function Home() {
                                   <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] p-2.5">
                                     <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[0.66rem] text-muted">
                                       <span>
-                                        Avg/{isJoinedUsersHourlyRange ? "hour" : "day"}: {" "}
-                                        {dailyJoinedUsersAverage.toFixed(1)}
+                                        Avg/
+                                        {isJoinedUsersHourlyRange
+                                          ? "hour"
+                                          : "day"}
+                                        : {dailyJoinedUsersAverage.toFixed(1)}
                                       </span>
-                                      <span>Median: {dailyJoinedUsersMedian.toFixed(1)}</span>
-                                      <span>Trend: {dailyJoinedUsersTrendLabel}</span>
+                                      <span>
+                                        Median:{" "}
+                                        {dailyJoinedUsersMedian.toFixed(1)}
+                                      </span>
+                                      <span>
+                                        Trend: {dailyJoinedUsersTrendLabel}
+                                      </span>
                                     </div>
 
                                     <svg
@@ -3880,32 +3904,47 @@ export default function Home() {
                                         fill="url(#daily-joined-users-chart-bg)"
                                       />
 
-                                      {dailyJoinedUsersChartGuides.map((guide) => (
-                                        <g key={`joined-users-guide-${guide.ratio}`}>
-                                          <line
-                                            x1="0"
-                                            y1={guide.y}
-                                            x2={DAILY_JOINED_USERS_CHART_WIDTH}
-                                            y2={guide.y}
-                                            stroke="var(--surface-border)"
-                                            strokeWidth={guide.ratio === 0 ? 1 : 0.8}
-                                            strokeDasharray={
-                                              guide.ratio === 0 ? undefined : "1.4 2"
-                                            }
-                                            opacity={guide.ratio === 0 ? 0.85 : 0.5}
-                                          />
-                                          <text
-                                            x={DAILY_JOINED_USERS_CHART_WIDTH - 0.6}
-                                            y={guide.y - 0.6}
-                                            textAnchor="end"
-                                            fill="var(--text-muted)"
-                                            fontSize="2.6"
-                                            opacity="0.9"
+                                      {dailyJoinedUsersChartGuides.map(
+                                        (guide) => (
+                                          <g
+                                            key={`joined-users-guide-${guide.ratio}`}
                                           >
-                                            {guide.value}
-                                          </text>
-                                        </g>
-                                      ))}
+                                            <line
+                                              x1="0"
+                                              y1={guide.y}
+                                              x2={
+                                                DAILY_JOINED_USERS_CHART_WIDTH
+                                              }
+                                              y2={guide.y}
+                                              stroke="var(--surface-border)"
+                                              strokeWidth={
+                                                guide.ratio === 0 ? 1 : 0.8
+                                              }
+                                              strokeDasharray={
+                                                guide.ratio === 0
+                                                  ? undefined
+                                                  : "1.4 2"
+                                              }
+                                              opacity={
+                                                guide.ratio === 0 ? 0.85 : 0.5
+                                              }
+                                            />
+                                            <text
+                                              x={
+                                                DAILY_JOINED_USERS_CHART_WIDTH -
+                                                0.6
+                                              }
+                                              y={guide.y - 0.6}
+                                              textAnchor="end"
+                                              fill="var(--text-muted)"
+                                              fontSize="2.6"
+                                              opacity="0.9"
+                                            >
+                                              {guide.value}
+                                            </text>
+                                          </g>
+                                        ),
+                                      )}
 
                                       <line
                                         x1="0"
@@ -3918,46 +3957,66 @@ export default function Home() {
                                         opacity="0.65"
                                       />
 
-                                      {dailyJoinedUsersChartPoints.map((point, index) => {
-                                        const isPeak =
-                                          !!dailyJoinedUsersPeakPoint &&
-                                          point.dateKey ===
-                                            dailyJoinedUsersPeakPoint.dateKey;
-                                        const isLatest =
-                                          index ===
-                                          dailyJoinedUsersChartPoints.length - 1;
-                                        const rawBarHeight =
-                                          chartPlotBottomY - point.y;
-                                        const barHeight =
-                                          point.count > 0
-                                            ? Math.max(rawBarHeight, 0.7)
-                                            : 0;
+                                      {dailyJoinedUsersChartPoints.map(
+                                        (point, index) => {
+                                          const isPeak =
+                                            !!dailyJoinedUsersPeakPoint &&
+                                            point.dateKey ===
+                                              dailyJoinedUsersPeakPoint.dateKey;
+                                          const isLatest =
+                                            index ===
+                                            dailyJoinedUsersChartPoints.length -
+                                              1;
+                                          const rawBarHeight =
+                                            chartPlotBottomY - point.y;
+                                          const barHeight =
+                                            point.count > 0
+                                              ? Math.max(rawBarHeight, 0.7)
+                                              : 0;
 
-                                        return (
-                                          <rect
-                                            key={`joined-users-bar-${point.dateKey}`}
-                                            x={point.x - dailyJoinedUsersBarWidth / 2}
-                                            y={chartPlotBottomY - barHeight}
-                                            width={dailyJoinedUsersBarWidth}
-                                            height={barHeight}
-                                            rx={Math.min(dailyJoinedUsersBarWidth / 2, 1.2)}
-                                            fill={
-                                              isPeak || isLatest
-                                                ? "var(--accent)"
-                                                : "url(#daily-joined-users-bar-fill)"
-                                            }
-                                            opacity={isPeak || isLatest ? 0.98 : 0.84}
-                                          >
-                                            <title>{`${point.label}: ${point.count}`}</title>
-                                          </rect>
-                                        );
-                                      })}
+                                          return (
+                                            <rect
+                                              key={`joined-users-bar-${point.dateKey}`}
+                                              x={
+                                                point.x -
+                                                dailyJoinedUsersBarWidth / 2
+                                              }
+                                              y={chartPlotBottomY - barHeight}
+                                              width={dailyJoinedUsersBarWidth}
+                                              height={barHeight}
+                                              rx={Math.min(
+                                                dailyJoinedUsersBarWidth / 2,
+                                                1.2,
+                                              )}
+                                              fill={
+                                                isPeak || isLatest
+                                                  ? "var(--accent)"
+                                                  : "url(#daily-joined-users-bar-fill)"
+                                              }
+                                              opacity={
+                                                isPeak || isLatest ? 0.98 : 0.84
+                                              }
+                                            >
+                                              <title>{`${point.label}: ${point.count}`}</title>
+                                            </rect>
+                                          );
+                                        },
+                                      )}
                                     </svg>
 
                                     <div className="mt-2 flex items-center justify-between text-[0.66rem] text-muted">
-                                      <span>{dailyJoinedUsersSeries[0]?.label ?? "-"}</span>
-                                      <span>{dailyJoinedUsersMiddlePoint?.label ?? "-"}</span>
-                                      <span>{dailyJoinedUsersLatestPoint?.label ?? "-"}</span>
+                                      <span>
+                                        {dailyJoinedUsersSeries[0]?.label ??
+                                          "-"}
+                                      </span>
+                                      <span>
+                                        {dailyJoinedUsersMiddlePoint?.label ??
+                                          "-"}
+                                      </span>
+                                      <span>
+                                        {dailyJoinedUsersLatestPoint?.label ??
+                                          "-"}
+                                      </span>
                                     </div>
                                   </div>
 
@@ -3965,23 +4024,37 @@ export default function Home() {
                                     <p>
                                       {joinedUsersPeakLabel}:{" "}
                                       <span className="text-main">
-                                        {dailyJoinedUsersMax} ({dailyJoinedUsersPeakPoint?.label ?? "-"})
+                                        {dailyJoinedUsersMax} (
+                                        {dailyJoinedUsersPeakPoint?.label ??
+                                          "-"}
+                                        )
                                       </span>
                                     </p>
                                     <p>
-                                      Low/{isJoinedUsersHourlyRange ? "hour" : "day"}:{" "}
+                                      Low/
+                                      {isJoinedUsersHourlyRange
+                                        ? "hour"
+                                        : "day"}
+                                      :{" "}
                                       <span className="text-main">
-                                        {dailyJoinedUsersLowPoint?.count ?? 0} ({dailyJoinedUsersLowPoint?.label ?? "-"})
+                                        {dailyJoinedUsersLowPoint?.count ?? 0} (
+                                        {dailyJoinedUsersLowPoint?.label ?? "-"}
+                                        )
                                       </span>
                                     </p>
                                     <p>
                                       {joinedUsersLatestLabel}:{" "}
                                       <span className="text-main">
-                                        {dailyJoinedUsersLatestPoint?.count ?? 0}
+                                        {dailyJoinedUsersLatestPoint?.count ??
+                                          0}
                                       </span>
                                     </p>
                                     <p>
-                                      Median/{isJoinedUsersHourlyRange ? "hour" : "day"}:{" "}
+                                      Median/
+                                      {isJoinedUsersHourlyRange
+                                        ? "hour"
+                                        : "day"}
+                                      :{" "}
                                       <span className="text-main">
                                         {dailyJoinedUsersMedian.toFixed(1)}
                                       </span>
@@ -3989,7 +4062,10 @@ export default function Home() {
                                     <p>
                                       Active buckets:{" "}
                                       <span className="text-main">
-                                        {dailyJoinedUsersActivePeriods}/{dailyJoinedUsersSeries.length} ({dailyJoinedUsersActiveRate.toFixed(0)}%)
+                                        {dailyJoinedUsersActivePeriods}/
+                                        {dailyJoinedUsersSeries.length} (
+                                        {dailyJoinedUsersActiveRate.toFixed(0)}
+                                        %)
                                       </span>
                                     </p>
                                     <p>
@@ -4011,18 +4087,29 @@ export default function Home() {
                                   <div className="flex items-center justify-between text-xs text-muted">
                                     <span>{generationsChartLabel}</span>
                                     <span>
-                                      <NumberTicker value={dailyGenerationsTotal} /> total
+                                      <NumberTicker
+                                        value={dailyGenerationsTotal}
+                                      />{" "}
+                                      total
                                     </span>
                                   </div>
 
                                   <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] p-2.5">
                                     <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[0.66rem] text-muted">
                                       <span>
-                                        Avg/{isJoinedUsersHourlyRange ? "hour" : "day"}: {" "}
-                                        {dailyGenerationsAverage.toFixed(1)}
+                                        Avg/
+                                        {isJoinedUsersHourlyRange
+                                          ? "hour"
+                                          : "day"}
+                                        : {dailyGenerationsAverage.toFixed(1)}
                                       </span>
-                                      <span>Median: {dailyGenerationsMedian.toFixed(1)}</span>
-                                      <span>Trend: {dailyGenerationsTrendLabel}</span>
+                                      <span>
+                                        Median:{" "}
+                                        {dailyGenerationsMedian.toFixed(1)}
+                                      </span>
+                                      <span>
+                                        Trend: {dailyGenerationsTrendLabel}
+                                      </span>
                                     </div>
 
                                     <svg
@@ -4079,32 +4166,47 @@ export default function Home() {
                                         fill="url(#daily-generations-chart-bg)"
                                       />
 
-                                      {dailyGenerationsChartGuides.map((guide) => (
-                                        <g key={`daily-generations-guide-${guide.ratio}`}>
-                                          <line
-                                            x1="0"
-                                            y1={guide.y}
-                                            x2={DAILY_JOINED_USERS_CHART_WIDTH}
-                                            y2={guide.y}
-                                            stroke="var(--surface-border)"
-                                            strokeWidth={guide.ratio === 0 ? 1 : 0.8}
-                                            strokeDasharray={
-                                              guide.ratio === 0 ? undefined : "1.4 2"
-                                            }
-                                            opacity={guide.ratio === 0 ? 0.85 : 0.5}
-                                          />
-                                          <text
-                                            x={DAILY_JOINED_USERS_CHART_WIDTH - 0.6}
-                                            y={guide.y - 0.6}
-                                            textAnchor="end"
-                                            fill="var(--text-muted)"
-                                            fontSize="2.6"
-                                            opacity="0.9"
+                                      {dailyGenerationsChartGuides.map(
+                                        (guide) => (
+                                          <g
+                                            key={`daily-generations-guide-${guide.ratio}`}
                                           >
-                                            {guide.value}
-                                          </text>
-                                        </g>
-                                      ))}
+                                            <line
+                                              x1="0"
+                                              y1={guide.y}
+                                              x2={
+                                                DAILY_JOINED_USERS_CHART_WIDTH
+                                              }
+                                              y2={guide.y}
+                                              stroke="var(--surface-border)"
+                                              strokeWidth={
+                                                guide.ratio === 0 ? 1 : 0.8
+                                              }
+                                              strokeDasharray={
+                                                guide.ratio === 0
+                                                  ? undefined
+                                                  : "1.4 2"
+                                              }
+                                              opacity={
+                                                guide.ratio === 0 ? 0.85 : 0.5
+                                              }
+                                            />
+                                            <text
+                                              x={
+                                                DAILY_JOINED_USERS_CHART_WIDTH -
+                                                0.6
+                                              }
+                                              y={guide.y - 0.6}
+                                              textAnchor="end"
+                                              fill="var(--text-muted)"
+                                              fontSize="2.6"
+                                              opacity="0.9"
+                                            >
+                                              {guide.value}
+                                            </text>
+                                          </g>
+                                        ),
+                                      )}
 
                                       <line
                                         x1="0"
@@ -4117,46 +4219,66 @@ export default function Home() {
                                         opacity="0.72"
                                       />
 
-                                      {dailyGenerationsChartPoints.map((point, index) => {
-                                        const isPeak =
-                                          !!dailyGenerationsPeakPoint &&
-                                          point.dateKey ===
-                                            dailyGenerationsPeakPoint.dateKey;
-                                        const isLatest =
-                                          index ===
-                                          dailyGenerationsChartPoints.length - 1;
-                                        const rawBarHeight =
-                                          chartPlotBottomY - point.y;
-                                        const barHeight =
-                                          point.count > 0
-                                            ? Math.max(rawBarHeight, 0.7)
-                                            : 0;
+                                      {dailyGenerationsChartPoints.map(
+                                        (point, index) => {
+                                          const isPeak =
+                                            !!dailyGenerationsPeakPoint &&
+                                            point.dateKey ===
+                                              dailyGenerationsPeakPoint.dateKey;
+                                          const isLatest =
+                                            index ===
+                                            dailyGenerationsChartPoints.length -
+                                              1;
+                                          const rawBarHeight =
+                                            chartPlotBottomY - point.y;
+                                          const barHeight =
+                                            point.count > 0
+                                              ? Math.max(rawBarHeight, 0.7)
+                                              : 0;
 
-                                        return (
-                                          <rect
-                                            key={`daily-generations-bar-${point.dateKey}`}
-                                            x={point.x - dailyGenerationsBarWidth / 2}
-                                            y={chartPlotBottomY - barHeight}
-                                            width={dailyGenerationsBarWidth}
-                                            height={barHeight}
-                                            rx={Math.min(dailyGenerationsBarWidth / 2, 1.2)}
-                                            fill={
-                                              isPeak || isLatest
-                                                ? "#10b981"
-                                                : "url(#daily-generations-bar-fill)"
-                                            }
-                                            opacity={isPeak || isLatest ? 0.98 : 0.84}
-                                          >
-                                            <title>{`${point.label}: ${point.count}`}</title>
-                                          </rect>
-                                        );
-                                      })}
+                                          return (
+                                            <rect
+                                              key={`daily-generations-bar-${point.dateKey}`}
+                                              x={
+                                                point.x -
+                                                dailyGenerationsBarWidth / 2
+                                              }
+                                              y={chartPlotBottomY - barHeight}
+                                              width={dailyGenerationsBarWidth}
+                                              height={barHeight}
+                                              rx={Math.min(
+                                                dailyGenerationsBarWidth / 2,
+                                                1.2,
+                                              )}
+                                              fill={
+                                                isPeak || isLatest
+                                                  ? "#10b981"
+                                                  : "url(#daily-generations-bar-fill)"
+                                              }
+                                              opacity={
+                                                isPeak || isLatest ? 0.98 : 0.84
+                                              }
+                                            >
+                                              <title>{`${point.label}: ${point.count}`}</title>
+                                            </rect>
+                                          );
+                                        },
+                                      )}
                                     </svg>
 
                                     <div className="mt-2 flex items-center justify-between text-[0.66rem] text-muted">
-                                      <span>{dailyGenerationsSeries[0]?.label ?? "-"}</span>
-                                      <span>{dailyGenerationsMiddlePoint?.label ?? "-"}</span>
-                                      <span>{dailyGenerationsLatestPoint?.label ?? "-"}</span>
+                                      <span>
+                                        {dailyGenerationsSeries[0]?.label ??
+                                          "-"}
+                                      </span>
+                                      <span>
+                                        {dailyGenerationsMiddlePoint?.label ??
+                                          "-"}
+                                      </span>
+                                      <span>
+                                        {dailyGenerationsLatestPoint?.label ??
+                                          "-"}
+                                      </span>
                                     </div>
                                   </div>
 
@@ -4164,23 +4286,37 @@ export default function Home() {
                                     <p>
                                       {joinedUsersPeakLabel}:{" "}
                                       <span className="text-main">
-                                        {dailyGenerationsMax} ({dailyGenerationsPeakPoint?.label ?? "-"})
+                                        {dailyGenerationsMax} (
+                                        {dailyGenerationsPeakPoint?.label ??
+                                          "-"}
+                                        )
                                       </span>
                                     </p>
                                     <p>
-                                      Low/{isJoinedUsersHourlyRange ? "hour" : "day"}:{" "}
+                                      Low/
+                                      {isJoinedUsersHourlyRange
+                                        ? "hour"
+                                        : "day"}
+                                      :{" "}
                                       <span className="text-main">
-                                        {dailyGenerationsLowPoint?.count ?? 0} ({dailyGenerationsLowPoint?.label ?? "-"})
+                                        {dailyGenerationsLowPoint?.count ?? 0} (
+                                        {dailyGenerationsLowPoint?.label ?? "-"}
+                                        )
                                       </span>
                                     </p>
                                     <p>
                                       {joinedUsersLatestLabel}:{" "}
                                       <span className="text-main">
-                                        {dailyGenerationsLatestPoint?.count ?? 0}
+                                        {dailyGenerationsLatestPoint?.count ??
+                                          0}
                                       </span>
                                     </p>
                                     <p>
-                                      Median/{isJoinedUsersHourlyRange ? "hour" : "day"}:{" "}
+                                      Median/
+                                      {isJoinedUsersHourlyRange
+                                        ? "hour"
+                                        : "day"}
+                                      :{" "}
                                       <span className="text-main">
                                         {dailyGenerationsMedian.toFixed(1)}
                                       </span>
@@ -4188,7 +4324,10 @@ export default function Home() {
                                     <p>
                                       Active buckets:{" "}
                                       <span className="text-main">
-                                        {dailyGenerationsActivePeriods}/{dailyGenerationsSeries.length} ({dailyGenerationsActiveRate.toFixed(0)}%)
+                                        {dailyGenerationsActivePeriods}/
+                                        {dailyGenerationsSeries.length} (
+                                        {dailyGenerationsActiveRate.toFixed(0)}
+                                        %)
                                       </span>
                                     </p>
                                     <p>
