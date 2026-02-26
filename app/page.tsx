@@ -208,17 +208,19 @@ interface UserJoinedDateRow {
   createdAt: string;
 }
 
+interface PresentationCreatedDateRow {
+  createdAt: string;
+}
+
 interface DailyJoinedUsersPoint {
   dateKey: string;
   label: string;
   count: number;
 }
 
-interface DailyJoinedUsersBarPoint extends DailyJoinedUsersPoint {
+interface DailyJoinedUsersChartPoint extends DailyJoinedUsersPoint {
   x: number;
   y: number;
-  barWidth: number;
-  barHeight: number;
 }
 
 interface ApiError {
@@ -241,8 +243,10 @@ const BROADCAST_LINK_PLACEHOLDER_TEXT = "link text";
 const BROADCAST_LINK_PLACEHOLDER_URL = "https://example.com";
 const BROADCAST_HISTORY_PAGE_SIZE = 20;
 const DAILY_JOINED_USERS_CHART_WIDTH = 100;
-const DAILY_JOINED_USERS_CHART_HEIGHT = 58;
-const DAILY_JOINED_USERS_CHART_BASE_OFFSET = 4;
+const DAILY_JOINED_USERS_CHART_HEIGHT = 46;
+const DAILY_JOINED_USERS_CHART_PADDING_X = 2.5;
+const DAILY_JOINED_USERS_CHART_PADDING_TOP = 3;
+const DAILY_JOINED_USERS_CHART_PADDING_BOTTOM = 4.5;
 const JOINED_USERS_RANGE_OPTIONS: Array<{
   value: JoinedUsersRange;
   label: string;
@@ -667,6 +671,21 @@ function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+function calculateMedian(values: number[]): number {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  const sorted = [...values].sort((a, b) => a - b);
+  const middleIndex = Math.floor(sorted.length / 2);
+
+  if (sorted.length % 2 === 0) {
+    return (sorted[middleIndex - 1] + sorted[middleIndex]) / 2;
+  }
+
+  return sorted[middleIndex];
+}
+
 function normalizeRuntimeModelSuggestions(
   rawSuggestions: string[] | undefined,
 ): string[] {
@@ -755,9 +774,14 @@ export default function Home() {
   const [joinedUserDates, setJoinedUserDates] = useState<UserJoinedDateRow[]>(
     [],
   );
+  const [presentationCreatedDates, setPresentationCreatedDates] = useState<
+    PresentationCreatedDateRow[]
+  >([]);
   const [joinedUsersRange, setJoinedUsersRange] =
     useState<JoinedUsersRange>("30d");
   const [hasLoadedJoinedUserDates, setHasLoadedJoinedUserDates] =
+    useState(false);
+  const [hasLoadedPresentationCreatedDates, setHasLoadedPresentationCreatedDates] =
     useState(false);
   const [cachedStatistics, setCachedStatistics] =
     useState<CachedStatistics | null>(null);
@@ -881,6 +905,7 @@ export default function Home() {
 
   const usersRequestVersionRef = useRef(0);
   const joinedUserDatesRequestVersionRef = useRef(0);
+  const presentationCreatedDatesRequestVersionRef = useRef(0);
   const presentationsRequestVersionRef = useRef(0);
   const broadcastRequestVersionRef = useRef(0);
   const profileSyncRequestInFlightRef = useRef(false);
@@ -1114,6 +1139,33 @@ export default function Home() {
     } catch (error) {
       if (requestVersion === joinedUserDatesRequestVersionRef.current) {
         setHasLoadedJoinedUserDates(true);
+      }
+
+      throw error;
+    }
+  }, [apiRequest]);
+
+  const fetchPresentationCreatedDates = useCallback(async () => {
+    const requestVersion = ++presentationCreatedDatesRequestVersionRef.current;
+
+    try {
+      const data = await apiRequest<PresentationCreatedDateRow[]>(
+        "/admin/presentations/created-dates",
+      );
+
+      if (
+        requestVersion !== presentationCreatedDatesRequestVersionRef.current
+      ) {
+        return;
+      }
+
+      setPresentationCreatedDates(Array.isArray(data) ? data : []);
+      setHasLoadedPresentationCreatedDates(true);
+    } catch (error) {
+      if (
+        requestVersion === presentationCreatedDatesRequestVersionRef.current
+      ) {
+        setHasLoadedPresentationCreatedDates(true);
       }
 
       throw error;
@@ -1400,6 +1452,7 @@ export default function Home() {
       fetchOverview(),
       fetchOverviewUsers(),
       fetchJoinedUserDates(),
+      fetchPresentationCreatedDates(),
       presentationFetchTask,
       ...(pathname.startsWith("/settings")
         ? [fetchRuntimeSettings(), fetchSystemPrompts()]
@@ -1430,6 +1483,7 @@ export default function Home() {
     fetchOverview,
     fetchOverviewUsers,
     fetchJoinedUserDates,
+    fetchPresentationCreatedDates,
     fetchBroadcastCurrentPage,
     fetchPresentationsCurrentPage,
     fetchPresentationsFirstPage,
@@ -1930,36 +1984,57 @@ export default function Home() {
     [dailyJoinedUsersSeries],
   );
 
-  const dailyJoinedUsersBarPoints = useMemo<DailyJoinedUsersBarPoint[]>(() => {
+  const chartPlotBottomY =
+    DAILY_JOINED_USERS_CHART_HEIGHT - DAILY_JOINED_USERS_CHART_PADDING_BOTTOM;
+  const chartPlotHeight =
+    DAILY_JOINED_USERS_CHART_HEIGHT -
+    DAILY_JOINED_USERS_CHART_PADDING_TOP -
+    DAILY_JOINED_USERS_CHART_PADDING_BOTTOM;
+
+  const dailyJoinedUsersChartPoints = useMemo<DailyJoinedUsersChartPoint[]>(() => {
     if (dailyJoinedUsersSeries.length === 0) {
       return [];
     }
 
     const maxValue = Math.max(dailyJoinedUsersMax, 1);
-    const chartBaseY =
-      DAILY_JOINED_USERS_CHART_HEIGHT - DAILY_JOINED_USERS_CHART_BASE_OFFSET;
-    const slotWidth = DAILY_JOINED_USERS_CHART_WIDTH / dailyJoinedUsersSeries.length;
-    const minBarWidth = dailyJoinedUsersSeries.length > 45 ? 0.75 : 1.6;
-    const barWidth = Math.max(Math.min(slotWidth * 0.72, 8), minBarWidth);
+    const chartWidth =
+      DAILY_JOINED_USERS_CHART_WIDTH - DAILY_JOINED_USERS_CHART_PADDING_X * 2;
+    const slotWidth = chartWidth / dailyJoinedUsersSeries.length;
 
     return dailyJoinedUsersSeries.map((point, index) => ({
       ...point,
-      x: index * slotWidth + (slotWidth - barWidth) / 2,
-      y: chartBaseY - (point.count / maxValue) * chartBaseY,
-      barWidth,
-      barHeight: (point.count / maxValue) * chartBaseY,
+      x: DAILY_JOINED_USERS_CHART_PADDING_X + index * slotWidth + slotWidth / 2,
+      y: chartPlotBottomY - (point.count / maxValue) * chartPlotHeight,
     }));
-  }, [dailyJoinedUsersMax, dailyJoinedUsersSeries]);
+  }, [
+    chartPlotBottomY,
+    chartPlotHeight,
+    dailyJoinedUsersMax,
+    dailyJoinedUsersSeries,
+  ]);
+
+  const dailyJoinedUsersBarWidth = useMemo(() => {
+    if (dailyJoinedUsersSeries.length === 0) {
+      return 0;
+    }
+
+    const chartWidth =
+      DAILY_JOINED_USERS_CHART_WIDTH - DAILY_JOINED_USERS_CHART_PADDING_X * 2;
+    const slotWidth = chartWidth / dailyJoinedUsersSeries.length;
+    const minBarWidth = dailyJoinedUsersSeries.length > 45 ? 0.48 : 0.95;
+
+    return Math.max(Math.min(slotWidth * 0.62, 4.4), minBarWidth);
+  }, [dailyJoinedUsersSeries.length]);
 
   const dailyJoinedUsersChartGuides = useMemo(() => {
-    const chartBaseY =
-      DAILY_JOINED_USERS_CHART_HEIGHT - DAILY_JOINED_USERS_CHART_BASE_OFFSET;
+    const maxValue = Math.max(dailyJoinedUsersMax, 1);
 
-    return [0, 0.25, 0.5, 0.75, 1].map((ratio) => ({
+    return [1, 0.75, 0.5, 0.25, 0].map((ratio) => ({
       ratio,
-      y: chartBaseY - ratio * chartBaseY,
+      value: Math.round(maxValue * ratio),
+      y: chartPlotBottomY - ratio * chartPlotHeight,
     }));
-  }, []);
+  }, [chartPlotBottomY, chartPlotHeight, dailyJoinedUsersMax]);
 
   const dailyJoinedUsersAverage = useMemo(() => {
     if (dailyJoinedUsersSeries.length === 0) {
@@ -1969,18 +2044,57 @@ export default function Home() {
     return dailyJoinedUsersTotal / dailyJoinedUsersSeries.length;
   }, [dailyJoinedUsersSeries, dailyJoinedUsersTotal]);
 
+  const dailyJoinedUsersMedian = useMemo(
+    () => calculateMedian(dailyJoinedUsersSeries.map((point) => point.count)),
+    [dailyJoinedUsersSeries],
+  );
+
   const dailyJoinedUsersAverageGuideY = useMemo(() => {
-    const chartBaseY =
-      DAILY_JOINED_USERS_CHART_HEIGHT - DAILY_JOINED_USERS_CHART_BASE_OFFSET;
     const maxValue = Math.max(dailyJoinedUsersMax, 1);
 
-    return chartBaseY - (dailyJoinedUsersAverage / maxValue) * chartBaseY;
-  }, [dailyJoinedUsersAverage, dailyJoinedUsersMax]);
+    return chartPlotBottomY - (dailyJoinedUsersAverage / maxValue) * chartPlotHeight;
+  }, [
+    chartPlotBottomY,
+    chartPlotHeight,
+    dailyJoinedUsersAverage,
+    dailyJoinedUsersMax,
+  ]);
+
+  const dailyJoinedUsersActivePeriods = useMemo(
+    () => dailyJoinedUsersSeries.filter((point) => point.count > 0).length,
+    [dailyJoinedUsersSeries],
+  );
+
+  const dailyJoinedUsersActiveRate = useMemo(() => {
+    if (dailyJoinedUsersSeries.length === 0) {
+      return 0;
+    }
+
+    return (dailyJoinedUsersActivePeriods / dailyJoinedUsersSeries.length) * 100;
+  }, [dailyJoinedUsersActivePeriods, dailyJoinedUsersSeries.length]);
 
   const dailyJoinedUsersMiddlePoint =
     dailyJoinedUsersSeries[
       Math.floor((dailyJoinedUsersSeries.length - 1) / 2)
     ] ?? null;
+  const dailyJoinedUsersPeakPoint = useMemo(() => {
+    if (dailyJoinedUsersSeries.length === 0) {
+      return null;
+    }
+
+    return dailyJoinedUsersSeries.reduce((peakPoint, point) => {
+      return point.count > peakPoint.count ? point : peakPoint;
+    }, dailyJoinedUsersSeries[0]);
+  }, [dailyJoinedUsersSeries]);
+  const dailyJoinedUsersLowPoint = useMemo(() => {
+    if (dailyJoinedUsersSeries.length === 0) {
+      return null;
+    }
+
+    return dailyJoinedUsersSeries.reduce((lowestPoint, point) => {
+      return point.count < lowestPoint.count ? point : lowestPoint;
+    }, dailyJoinedUsersSeries[0]);
+  }, [dailyJoinedUsersSeries]);
   const dailyJoinedUsersLatestPoint =
     dailyJoinedUsersSeries[dailyJoinedUsersSeries.length - 1] ?? null;
   const dailyJoinedUsersPreviousPoint =
@@ -2018,16 +2132,266 @@ export default function Home() {
     dailyJoinedUsersTrendDelta,
   ]);
 
+  const dailyGenerationsSeries = useMemo<DailyJoinedUsersPoint[]>(() => {
+    if (presentationCreatedDates.length === 0) {
+      return [];
+    }
+
+    const now = new Date();
+    const todayUtc = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    );
+
+    if (joinedUsersRange === "1d") {
+      const endHour = now.getUTCHours();
+      const countsByHour = Array.from({ length: endHour + 1 }, () => 0);
+
+      for (const row of presentationCreatedDates) {
+        const parsedDate = new Date(row.createdAt);
+
+        if (Number.isNaN(parsedDate.getTime())) {
+          continue;
+        }
+
+        if (
+          parsedDate.getUTCFullYear() !== now.getUTCFullYear() ||
+          parsedDate.getUTCMonth() !== now.getUTCMonth() ||
+          parsedDate.getUTCDate() !== now.getUTCDate()
+        ) {
+          continue;
+        }
+
+        const hour = parsedDate.getUTCHours();
+
+        if (hour >= 0 && hour <= endHour) {
+          countsByHour[hour] += 1;
+        }
+      }
+
+      return countsByHour.map((count, hour) => {
+        const normalizedHour = hour.toString().padStart(2, "0");
+
+        return {
+          dateKey: `${todayUtc.toISOString().slice(0, 10)}-${normalizedHour}`,
+          label: `${normalizedHour}:00`,
+          count,
+        };
+      });
+    }
+
+    const rangeDaysRaw = Number.parseInt(joinedUsersRange.slice(0, -1), 10);
+    const rangeDays =
+      Number.isFinite(rangeDaysRaw) && rangeDaysRaw > 0 ? rangeDaysRaw : 30;
+    const startDate = new Date(todayUtc);
+    startDate.setUTCDate(startDate.getUTCDate() - (rangeDays - 1));
+    const countsByDate = new Map<string, number>();
+
+    for (const row of presentationCreatedDates) {
+      const parsedDate = new Date(row.createdAt);
+
+      if (Number.isNaN(parsedDate.getTime())) {
+        continue;
+      }
+
+      if (parsedDate < startDate || parsedDate > now) {
+        continue;
+      }
+
+      const dateKey = parsedDate.toISOString().slice(0, 10);
+      countsByDate.set(dateKey, (countsByDate.get(dateKey) ?? 0) + 1);
+    }
+
+    const labelFormatter = new Intl.DateTimeFormat("en-GB", {
+      day: "2-digit",
+      month: "short",
+      timeZone: "UTC",
+    });
+    const points: DailyJoinedUsersPoint[] = [];
+
+    for (
+      const cursor = new Date(startDate);
+      cursor <= todayUtc;
+      cursor.setUTCDate(cursor.getUTCDate() + 1)
+    ) {
+      const dateKey = cursor.toISOString().slice(0, 10);
+
+      points.push({
+        dateKey,
+        label: labelFormatter.format(cursor),
+        count: countsByDate.get(dateKey) ?? 0,
+      });
+    }
+
+    return points;
+  }, [joinedUsersRange, presentationCreatedDates]);
+
+  const dailyGenerationsTotal = useMemo(
+    () => dailyGenerationsSeries.reduce((sum, point) => sum + point.count, 0),
+    [dailyGenerationsSeries],
+  );
+
+  const dailyGenerationsMax = useMemo(
+    () =>
+      dailyGenerationsSeries.reduce(
+        (maxValue, point) => Math.max(maxValue, point.count),
+        0,
+      ),
+    [dailyGenerationsSeries],
+  );
+
+  const dailyGenerationsChartPoints = useMemo<DailyJoinedUsersChartPoint[]>(() => {
+    if (dailyGenerationsSeries.length === 0) {
+      return [];
+    }
+
+    const maxValue = Math.max(dailyGenerationsMax, 1);
+    const chartWidth =
+      DAILY_JOINED_USERS_CHART_WIDTH - DAILY_JOINED_USERS_CHART_PADDING_X * 2;
+    const slotWidth = chartWidth / dailyGenerationsSeries.length;
+
+    return dailyGenerationsSeries.map((point, index) => ({
+      ...point,
+      x: DAILY_JOINED_USERS_CHART_PADDING_X + index * slotWidth + slotWidth / 2,
+      y: chartPlotBottomY - (point.count / maxValue) * chartPlotHeight,
+    }));
+  }, [
+    chartPlotBottomY,
+    chartPlotHeight,
+    dailyGenerationsMax,
+    dailyGenerationsSeries,
+  ]);
+
+  const dailyGenerationsBarWidth = useMemo(() => {
+    if (dailyGenerationsSeries.length === 0) {
+      return 0;
+    }
+
+    const chartWidth =
+      DAILY_JOINED_USERS_CHART_WIDTH - DAILY_JOINED_USERS_CHART_PADDING_X * 2;
+    const slotWidth = chartWidth / dailyGenerationsSeries.length;
+    const minBarWidth = dailyGenerationsSeries.length > 45 ? 0.48 : 0.95;
+
+    return Math.max(Math.min(slotWidth * 0.62, 4.4), minBarWidth);
+  }, [dailyGenerationsSeries.length]);
+
+  const dailyGenerationsChartGuides = useMemo(() => {
+    const maxValue = Math.max(dailyGenerationsMax, 1);
+
+    return [1, 0.75, 0.5, 0.25, 0].map((ratio) => ({
+      ratio,
+      value: Math.round(maxValue * ratio),
+      y: chartPlotBottomY - ratio * chartPlotHeight,
+    }));
+  }, [chartPlotBottomY, chartPlotHeight, dailyGenerationsMax]);
+
+  const dailyGenerationsAverage = useMemo(() => {
+    if (dailyGenerationsSeries.length === 0) {
+      return 0;
+    }
+
+    return dailyGenerationsTotal / dailyGenerationsSeries.length;
+  }, [dailyGenerationsSeries, dailyGenerationsTotal]);
+
+  const dailyGenerationsMedian = useMemo(
+    () => calculateMedian(dailyGenerationsSeries.map((point) => point.count)),
+    [dailyGenerationsSeries],
+  );
+
+  const dailyGenerationsAverageGuideY = useMemo(() => {
+    const maxValue = Math.max(dailyGenerationsMax, 1);
+
+    return chartPlotBottomY - (dailyGenerationsAverage / maxValue) * chartPlotHeight;
+  }, [
+    chartPlotBottomY,
+    chartPlotHeight,
+    dailyGenerationsAverage,
+    dailyGenerationsMax,
+  ]);
+
+  const dailyGenerationsActivePeriods = useMemo(
+    () => dailyGenerationsSeries.filter((point) => point.count > 0).length,
+    [dailyGenerationsSeries],
+  );
+
+  const dailyGenerationsActiveRate = useMemo(() => {
+    if (dailyGenerationsSeries.length === 0) {
+      return 0;
+    }
+
+    return (dailyGenerationsActivePeriods / dailyGenerationsSeries.length) * 100;
+  }, [dailyGenerationsActivePeriods, dailyGenerationsSeries.length]);
+
+  const dailyGenerationsMiddlePoint =
+    dailyGenerationsSeries[Math.floor((dailyGenerationsSeries.length - 1) / 2)] ??
+    null;
+  const dailyGenerationsPeakPoint = useMemo(() => {
+    if (dailyGenerationsSeries.length === 0) {
+      return null;
+    }
+
+    return dailyGenerationsSeries.reduce((peakPoint, point) => {
+      return point.count > peakPoint.count ? point : peakPoint;
+    }, dailyGenerationsSeries[0]);
+  }, [dailyGenerationsSeries]);
+  const dailyGenerationsLowPoint = useMemo(() => {
+    if (dailyGenerationsSeries.length === 0) {
+      return null;
+    }
+
+    return dailyGenerationsSeries.reduce((lowestPoint, point) => {
+      return point.count < lowestPoint.count ? point : lowestPoint;
+    }, dailyGenerationsSeries[0]);
+  }, [dailyGenerationsSeries]);
+  const dailyGenerationsLatestPoint =
+    dailyGenerationsSeries[dailyGenerationsSeries.length - 1] ?? null;
+  const dailyGenerationsPreviousPoint =
+    dailyGenerationsSeries.length > 1
+      ? dailyGenerationsSeries[dailyGenerationsSeries.length - 2]
+      : null;
+
+  const dailyGenerationsTrendDelta =
+    dailyGenerationsLatestPoint && dailyGenerationsPreviousPoint
+      ? dailyGenerationsLatestPoint.count - dailyGenerationsPreviousPoint.count
+      : 0;
+
+  const dailyGenerationsTrendLabel = useMemo(() => {
+    if (!dailyGenerationsLatestPoint || !dailyGenerationsPreviousPoint) {
+      return "N/A";
+    }
+
+    if (dailyGenerationsTrendDelta === 0) {
+      return "Flat";
+    }
+
+    const direction = dailyGenerationsTrendDelta > 0 ? "Up" : "Down";
+    const absoluteDelta = Math.abs(dailyGenerationsTrendDelta);
+
+    if (dailyGenerationsPreviousPoint.count <= 0) {
+      return `${direction} ${absoluteDelta}`;
+    }
+
+    const percent = (absoluteDelta / dailyGenerationsPreviousPoint.count) * 100;
+    return `${direction} ${percent.toFixed(1)}%`;
+  }, [
+    dailyGenerationsLatestPoint,
+    dailyGenerationsPreviousPoint,
+    dailyGenerationsTrendDelta,
+  ]);
+
   const joinedUsersPeakLabel = isJoinedUsersHourlyRange
     ? "Peak/hour"
     : "Peak/day";
   const joinedUsersLatestLabel = isJoinedUsersHourlyRange
     ? "Latest hour"
     : "Latest day";
-  const joinedUsersRangeUnitLabel = isJoinedUsersHourlyRange ? "hours" : "days";
   const joinedUsersChartLabel = isJoinedUsersHourlyRange
     ? "Joined users by hour (UTC)"
     : "Daily joined users (UTC)";
+  const generationsChartLabel = isJoinedUsersHourlyRange
+    ? "Generations by hour (UTC)"
+    : "Daily generations (UTC)";
+  const hasLoadedGrowthCharts =
+    hasLoadedJoinedUserDates && hasLoadedPresentationCreatedDates;
 
   useEffect(() => {
     if (!isHydrated) {
@@ -2232,8 +2596,10 @@ export default function Home() {
     setOverviewUsers([]);
     setHasLoadedOverviewUsers(false);
     setJoinedUserDates([]);
+    setPresentationCreatedDates([]);
     setJoinedUsersRange("30d");
     setHasLoadedJoinedUserDates(false);
+    setHasLoadedPresentationCreatedDates(false);
     setPresentations([]);
     setPresentationStatus("all");
     setPresentationLanguage("all");
@@ -3393,12 +3759,8 @@ export default function Home() {
                           </div>
                         </BentoCard>
 
-                        <div className="surface-glass order-3 space-y-3 rounded-3xl p-5 md:col-span-6 md:row-span-1">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <p className="text-xs text-muted">
-                              {joinedUsersChartLabel}
-                            </p>
-
+                        <div className="surface-glass order-3 space-y-0 rounded-3xl p-5 md:col-span-6 md:row-span-2">
+                          <div className="flex flex-wrap items-center justify-end gap-2">
                             <div className="flex items-center gap-2">
                               <label
                                 htmlFor="joined-users-range"
@@ -3425,180 +3787,420 @@ export default function Home() {
                                   </option>
                                 ))}
                               </select>
-
-                              <p className="text-sm font-semibold text-main">
-                                <NumberTicker value={dailyJoinedUsersTotal} />{" "}
-                                total
-                              </p>
                             </div>
                           </div>
 
-                          {!hasLoadedJoinedUserDates ? (
-                            <div className="space-y-2">
-                              <SkeletonBlock className="h-36 w-full rounded-xl md:h-44" />
-                              <SkeletonBlock className="h-3 w-3/5" />
+                          {!hasLoadedGrowthCharts ? (
+                            <div className="space-y-3">
+                              <SkeletonBlock className="h-32 w-full rounded-xl md:h-36" />
+                              <SkeletonBlock className="h-32 w-full rounded-xl md:h-36" />
                             </div>
-                          ) : dailyJoinedUsersSeries.length === 0 ? (
+                          ) : dailyJoinedUsersSeries.length === 0 &&
+                            dailyGenerationsSeries.length === 0 ? (
                             <p className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] px-3 py-2 text-sm text-muted">
-                              No joined users yet.
+                              No joined users or generations yet.
                             </p>
                           ) : (
-                            <>
-                              <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] p-2.5">
-                                <svg
-                                  viewBox={`0 0 ${DAILY_JOINED_USERS_CHART_WIDTH} ${DAILY_JOINED_USERS_CHART_HEIGHT}`}
-                                  preserveAspectRatio="none"
-                                  className="h-36 w-full md:h-44"
-                                  role="img"
-                                  aria-label="Joined users column chart"
-                                >
-                                  <defs>
-                                    <linearGradient
-                                      id="daily-joined-users-chart-bg"
-                                      x1="0"
-                                      y1="0"
-                                      x2="0"
-                                      y2="1"
+                            <div className="space-y-4">
+                              {dailyJoinedUsersSeries.length === 0 ? (
+                                <p className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] px-3 py-2 text-sm text-muted">
+                                  No joined users yet.
+                                </p>
+                              ) : (
+                                <div className="space-y-2.5">
+                                  <div className="flex items-center justify-between text-xs text-muted">
+                                    <span>{joinedUsersChartLabel}</span>
+                                    <span>
+                                      <NumberTicker value={dailyJoinedUsersTotal} />{" "}
+                                      total
+                                    </span>
+                                  </div>
+
+                                  <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] p-2.5">
+                                    <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[0.66rem] text-muted">
+                                      <span>
+                                        Avg/{isJoinedUsersHourlyRange ? "hour" : "day"}: {" "}
+                                        {dailyJoinedUsersAverage.toFixed(1)}
+                                      </span>
+                                      <span>Median: {dailyJoinedUsersMedian.toFixed(1)}</span>
+                                      <span>Trend: {dailyJoinedUsersTrendLabel}</span>
+                                    </div>
+
+                                    <svg
+                                      viewBox={`0 0 ${DAILY_JOINED_USERS_CHART_WIDTH} ${DAILY_JOINED_USERS_CHART_HEIGHT}`}
+                                      preserveAspectRatio="none"
+                                      className="h-28 w-full md:h-32"
+                                      role="img"
+                                      aria-label="Joined users bar chart"
                                     >
-                                      <stop
-                                        offset="0%"
-                                        stopColor="var(--accent)"
-                                        stopOpacity="0.14"
-                                      />
-                                      <stop
-                                        offset="100%"
-                                        stopColor="var(--accent)"
-                                        stopOpacity="0.02"
-                                      />
-                                    </linearGradient>
-                                    <linearGradient
-                                      id="daily-joined-users-bar-fill"
-                                      x1="0"
-                                      y1="0"
-                                      x2="0"
-                                      y2="1"
-                                    >
-                                      <stop
-                                        offset="0%"
-                                        stopColor="var(--accent)"
-                                        stopOpacity="0.88"
-                                      />
-                                      <stop
-                                        offset="100%"
-                                        stopColor="var(--accent)"
-                                        stopOpacity="0.24"
-                                      />
-                                    </linearGradient>
-                                  </defs>
+                                      <defs>
+                                        <linearGradient
+                                          id="daily-joined-users-chart-bg"
+                                          x1="0"
+                                          y1="0"
+                                          x2="0"
+                                          y2="1"
+                                        >
+                                          <stop
+                                            offset="0%"
+                                            stopColor="var(--accent)"
+                                            stopOpacity="0.14"
+                                          />
+                                          <stop
+                                            offset="100%"
+                                            stopColor="var(--accent)"
+                                            stopOpacity="0.02"
+                                          />
+                                        </linearGradient>
+                                        <linearGradient
+                                          id="daily-joined-users-bar-fill"
+                                          x1="0"
+                                          y1="0"
+                                          x2="0"
+                                          y2="1"
+                                        >
+                                          <stop
+                                            offset="0%"
+                                            stopColor="var(--accent)"
+                                            stopOpacity="0.88"
+                                          />
+                                          <stop
+                                            offset="100%"
+                                            stopColor="var(--accent)"
+                                            stopOpacity="0.24"
+                                          />
+                                        </linearGradient>
+                                      </defs>
 
-                                  <rect
-                                    x="0"
-                                    y="0"
-                                    width={DAILY_JOINED_USERS_CHART_WIDTH}
-                                    height={DAILY_JOINED_USERS_CHART_HEIGHT}
-                                    fill="url(#daily-joined-users-chart-bg)"
-                                  />
-
-                                  {dailyJoinedUsersChartGuides.map((guide) => (
-                                    <line
-                                      key={`joined-users-guide-${guide.ratio}`}
-                                      x1="0"
-                                      y1={guide.y}
-                                      x2={DAILY_JOINED_USERS_CHART_WIDTH}
-                                      y2={guide.y}
-                                      stroke="var(--surface-border)"
-                                      strokeWidth={guide.ratio === 0 ? 1.1 : 0.8}
-                                      strokeDasharray={
-                                        guide.ratio === 0 ? undefined : "1.2 2"
-                                      }
-                                      opacity={guide.ratio === 0 ? 0.9 : 0.55}
-                                    />
-                                  ))}
-
-                                  <line
-                                    x1="0"
-                                    y1={dailyJoinedUsersAverageGuideY}
-                                    x2={DAILY_JOINED_USERS_CHART_WIDTH}
-                                    y2={dailyJoinedUsersAverageGuideY}
-                                    stroke="var(--accent)"
-                                    strokeWidth="0.85"
-                                    strokeDasharray="2 2"
-                                    opacity="0.65"
-                                  />
-
-                                  {dailyJoinedUsersBarPoints.map((point, index) => {
-                                    const isPeak =
-                                      dailyJoinedUsersMax > 0 &&
-                                      point.count === dailyJoinedUsersMax;
-                                    const isLatest =
-                                      index === dailyJoinedUsersBarPoints.length - 1;
-
-                                    return (
                                       <rect
-                                        key={`joined-users-bar-${point.dateKey}`}
-                                        x={point.x}
-                                        y={point.y}
-                                        width={point.barWidth}
-                                        height={point.barHeight}
-                                        rx={Math.min(point.barWidth / 2, 1.4)}
-                                        fill={
-                                          isPeak || isLatest
-                                            ? "var(--accent)"
-                                            : "url(#daily-joined-users-bar-fill)"
-                                        }
-                                        opacity={isPeak || isLatest ? 1 : 0.82}
-                                      >
-                                        <title>{`${point.label}: ${point.count}`}</title>
-                                      </rect>
-                                    );
-                                  })}
-                                </svg>
+                                        x="0"
+                                        y="0"
+                                        width={DAILY_JOINED_USERS_CHART_WIDTH}
+                                        height={DAILY_JOINED_USERS_CHART_HEIGHT}
+                                        fill="url(#daily-joined-users-chart-bg)"
+                                      />
 
-                                <div className="mt-2 flex items-center justify-between text-[0.66rem] text-muted">
-                                  <span>
-                                    Avg {isJoinedUsersHourlyRange ? "hour" : "day"}: {dailyJoinedUsersAverage.toFixed(1)}
-                                  </span>
-                                  <span>Trend: {dailyJoinedUsersTrendLabel}</span>
+                                      {dailyJoinedUsersChartGuides.map((guide) => (
+                                        <g key={`joined-users-guide-${guide.ratio}`}>
+                                          <line
+                                            x1="0"
+                                            y1={guide.y}
+                                            x2={DAILY_JOINED_USERS_CHART_WIDTH}
+                                            y2={guide.y}
+                                            stroke="var(--surface-border)"
+                                            strokeWidth={guide.ratio === 0 ? 1 : 0.8}
+                                            strokeDasharray={
+                                              guide.ratio === 0 ? undefined : "1.4 2"
+                                            }
+                                            opacity={guide.ratio === 0 ? 0.85 : 0.5}
+                                          />
+                                          <text
+                                            x={DAILY_JOINED_USERS_CHART_WIDTH - 0.6}
+                                            y={guide.y - 0.6}
+                                            textAnchor="end"
+                                            fill="var(--text-muted)"
+                                            fontSize="2.6"
+                                            opacity="0.9"
+                                          >
+                                            {guide.value}
+                                          </text>
+                                        </g>
+                                      ))}
+
+                                      <line
+                                        x1="0"
+                                        y1={dailyJoinedUsersAverageGuideY}
+                                        x2={DAILY_JOINED_USERS_CHART_WIDTH}
+                                        y2={dailyJoinedUsersAverageGuideY}
+                                        stroke="var(--accent)"
+                                        strokeWidth="0.85"
+                                        strokeDasharray="2 2"
+                                        opacity="0.65"
+                                      />
+
+                                      {dailyJoinedUsersChartPoints.map((point, index) => {
+                                        const isPeak =
+                                          !!dailyJoinedUsersPeakPoint &&
+                                          point.dateKey ===
+                                            dailyJoinedUsersPeakPoint.dateKey;
+                                        const isLatest =
+                                          index ===
+                                          dailyJoinedUsersChartPoints.length - 1;
+                                        const rawBarHeight =
+                                          chartPlotBottomY - point.y;
+                                        const barHeight =
+                                          point.count > 0
+                                            ? Math.max(rawBarHeight, 0.7)
+                                            : 0;
+
+                                        return (
+                                          <rect
+                                            key={`joined-users-bar-${point.dateKey}`}
+                                            x={point.x - dailyJoinedUsersBarWidth / 2}
+                                            y={chartPlotBottomY - barHeight}
+                                            width={dailyJoinedUsersBarWidth}
+                                            height={barHeight}
+                                            rx={Math.min(dailyJoinedUsersBarWidth / 2, 1.2)}
+                                            fill={
+                                              isPeak || isLatest
+                                                ? "var(--accent)"
+                                                : "url(#daily-joined-users-bar-fill)"
+                                            }
+                                            opacity={isPeak || isLatest ? 0.98 : 0.84}
+                                          >
+                                            <title>{`${point.label}: ${point.count}`}</title>
+                                          </rect>
+                                        );
+                                      })}
+                                    </svg>
+
+                                    <div className="mt-2 flex items-center justify-between text-[0.66rem] text-muted">
+                                      <span>{dailyJoinedUsersSeries[0]?.label ?? "-"}</span>
+                                      <span>{dailyJoinedUsersMiddlePoint?.label ?? "-"}</span>
+                                      <span>{dailyJoinedUsersLatestPoint?.label ?? "-"}</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-2 text-[0.72rem] text-muted sm:grid-cols-3 xl:grid-cols-6">
+                                    <p>
+                                      {joinedUsersPeakLabel}:{" "}
+                                      <span className="text-main">
+                                        {dailyJoinedUsersMax} ({dailyJoinedUsersPeakPoint?.label ?? "-"})
+                                      </span>
+                                    </p>
+                                    <p>
+                                      Low/{isJoinedUsersHourlyRange ? "hour" : "day"}:{" "}
+                                      <span className="text-main">
+                                        {dailyJoinedUsersLowPoint?.count ?? 0} ({dailyJoinedUsersLowPoint?.label ?? "-"})
+                                      </span>
+                                    </p>
+                                    <p>
+                                      {joinedUsersLatestLabel}:{" "}
+                                      <span className="text-main">
+                                        {dailyJoinedUsersLatestPoint?.count ?? 0}
+                                      </span>
+                                    </p>
+                                    <p>
+                                      Median/{isJoinedUsersHourlyRange ? "hour" : "day"}:{" "}
+                                      <span className="text-main">
+                                        {dailyJoinedUsersMedian.toFixed(1)}
+                                      </span>
+                                    </p>
+                                    <p>
+                                      Active buckets:{" "}
+                                      <span className="text-main">
+                                        {dailyJoinedUsersActivePeriods}/{dailyJoinedUsersSeries.length} ({dailyJoinedUsersActiveRate.toFixed(0)}%)
+                                      </span>
+                                    </p>
+                                    <p>
+                                      Trend:{" "}
+                                      <span className="text-main">
+                                        {dailyJoinedUsersTrendLabel}
+                                      </span>
+                                    </p>
+                                  </div>
                                 </div>
-                              </div>
+                              )}
 
-                              <div className="flex items-center justify-between text-[0.72rem] text-muted">
-                                <span>{dailyJoinedUsersSeries[0]?.label ?? "-"}</span>
-                                <span>{dailyJoinedUsersMiddlePoint?.label ?? "-"}</span>
-                                <span>{dailyJoinedUsersLatestPoint?.label ?? "-"}</span>
-                              </div>
+                              {dailyGenerationsSeries.length === 0 ? (
+                                <p className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] px-3 py-2 text-sm text-muted">
+                                  No generations yet.
+                                </p>
+                              ) : (
+                                <div className="space-y-2.5">
+                                  <div className="flex items-center justify-between text-xs text-muted">
+                                    <span>{generationsChartLabel}</span>
+                                    <span>
+                                      <NumberTicker value={dailyGenerationsTotal} /> total
+                                    </span>
+                                  </div>
 
-                              <div className="grid grid-cols-2 gap-2 text-[0.72rem] text-muted sm:grid-cols-5">
-                                <p>
-                                  {joinedUsersPeakLabel}:{" "}
-                                  <span className="text-main">
-                                    {dailyJoinedUsersMax}
-                                  </span>
-                                </p>
-                                <p>
-                                  {joinedUsersLatestLabel}:{" "}
-                                  <span className="text-main">
-                                    {dailyJoinedUsersLatestPoint?.count ?? 0}
-                                  </span>
-                                </p>
-                                <p>
-                                  Avg/{isJoinedUsersHourlyRange ? "hour" : "day"}:{" "}
-                                  <span className="text-main">
-                                    {dailyJoinedUsersAverage.toFixed(1)}
-                                  </span>
-                                </p>
-                                <p>
-                                  Trend:{" "}
-                                  <span className="text-main">
-                                    {dailyJoinedUsersTrendLabel}
-                                  </span>
-                                </p>
-                                <p>
-                                  Range: <span className="text-main">{dailyJoinedUsersSeries.length}</span>{" "}
-                                  {joinedUsersRangeUnitLabel}
-                                </p>
-                              </div>
-                            </>
+                                  <div className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-3)] p-2.5">
+                                    <div className="mb-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[0.66rem] text-muted">
+                                      <span>
+                                        Avg/{isJoinedUsersHourlyRange ? "hour" : "day"}: {" "}
+                                        {dailyGenerationsAverage.toFixed(1)}
+                                      </span>
+                                      <span>Median: {dailyGenerationsMedian.toFixed(1)}</span>
+                                      <span>Trend: {dailyGenerationsTrendLabel}</span>
+                                    </div>
+
+                                    <svg
+                                      viewBox={`0 0 ${DAILY_JOINED_USERS_CHART_WIDTH} ${DAILY_JOINED_USERS_CHART_HEIGHT}`}
+                                      preserveAspectRatio="none"
+                                      className="h-28 w-full md:h-32"
+                                      role="img"
+                                      aria-label="Daily generations bar chart"
+                                    >
+                                      <defs>
+                                        <linearGradient
+                                          id="daily-generations-chart-bg"
+                                          x1="0"
+                                          y1="0"
+                                          x2="0"
+                                          y2="1"
+                                        >
+                                          <stop
+                                            offset="0%"
+                                            stopColor="#10b981"
+                                            stopOpacity="0.18"
+                                          />
+                                          <stop
+                                            offset="100%"
+                                            stopColor="#10b981"
+                                            stopOpacity="0.03"
+                                          />
+                                        </linearGradient>
+                                        <linearGradient
+                                          id="daily-generations-bar-fill"
+                                          x1="0"
+                                          y1="0"
+                                          x2="0"
+                                          y2="1"
+                                        >
+                                          <stop
+                                            offset="0%"
+                                            stopColor="#10b981"
+                                            stopOpacity="0.9"
+                                          />
+                                          <stop
+                                            offset="100%"
+                                            stopColor="#10b981"
+                                            stopOpacity="0.28"
+                                          />
+                                        </linearGradient>
+                                      </defs>
+
+                                      <rect
+                                        x="0"
+                                        y="0"
+                                        width={DAILY_JOINED_USERS_CHART_WIDTH}
+                                        height={DAILY_JOINED_USERS_CHART_HEIGHT}
+                                        fill="url(#daily-generations-chart-bg)"
+                                      />
+
+                                      {dailyGenerationsChartGuides.map((guide) => (
+                                        <g key={`daily-generations-guide-${guide.ratio}`}>
+                                          <line
+                                            x1="0"
+                                            y1={guide.y}
+                                            x2={DAILY_JOINED_USERS_CHART_WIDTH}
+                                            y2={guide.y}
+                                            stroke="var(--surface-border)"
+                                            strokeWidth={guide.ratio === 0 ? 1 : 0.8}
+                                            strokeDasharray={
+                                              guide.ratio === 0 ? undefined : "1.4 2"
+                                            }
+                                            opacity={guide.ratio === 0 ? 0.85 : 0.5}
+                                          />
+                                          <text
+                                            x={DAILY_JOINED_USERS_CHART_WIDTH - 0.6}
+                                            y={guide.y - 0.6}
+                                            textAnchor="end"
+                                            fill="var(--text-muted)"
+                                            fontSize="2.6"
+                                            opacity="0.9"
+                                          >
+                                            {guide.value}
+                                          </text>
+                                        </g>
+                                      ))}
+
+                                      <line
+                                        x1="0"
+                                        y1={dailyGenerationsAverageGuideY}
+                                        x2={DAILY_JOINED_USERS_CHART_WIDTH}
+                                        y2={dailyGenerationsAverageGuideY}
+                                        stroke="#10b981"
+                                        strokeWidth="0.85"
+                                        strokeDasharray="2 2"
+                                        opacity="0.72"
+                                      />
+
+                                      {dailyGenerationsChartPoints.map((point, index) => {
+                                        const isPeak =
+                                          !!dailyGenerationsPeakPoint &&
+                                          point.dateKey ===
+                                            dailyGenerationsPeakPoint.dateKey;
+                                        const isLatest =
+                                          index ===
+                                          dailyGenerationsChartPoints.length - 1;
+                                        const rawBarHeight =
+                                          chartPlotBottomY - point.y;
+                                        const barHeight =
+                                          point.count > 0
+                                            ? Math.max(rawBarHeight, 0.7)
+                                            : 0;
+
+                                        return (
+                                          <rect
+                                            key={`daily-generations-bar-${point.dateKey}`}
+                                            x={point.x - dailyGenerationsBarWidth / 2}
+                                            y={chartPlotBottomY - barHeight}
+                                            width={dailyGenerationsBarWidth}
+                                            height={barHeight}
+                                            rx={Math.min(dailyGenerationsBarWidth / 2, 1.2)}
+                                            fill={
+                                              isPeak || isLatest
+                                                ? "#10b981"
+                                                : "url(#daily-generations-bar-fill)"
+                                            }
+                                            opacity={isPeak || isLatest ? 0.98 : 0.84}
+                                          >
+                                            <title>{`${point.label}: ${point.count}`}</title>
+                                          </rect>
+                                        );
+                                      })}
+                                    </svg>
+
+                                    <div className="mt-2 flex items-center justify-between text-[0.66rem] text-muted">
+                                      <span>{dailyGenerationsSeries[0]?.label ?? "-"}</span>
+                                      <span>{dailyGenerationsMiddlePoint?.label ?? "-"}</span>
+                                      <span>{dailyGenerationsLatestPoint?.label ?? "-"}</span>
+                                    </div>
+                                  </div>
+
+                                  <div className="grid grid-cols-2 gap-2 text-[0.72rem] text-muted sm:grid-cols-3 xl:grid-cols-6">
+                                    <p>
+                                      {joinedUsersPeakLabel}:{" "}
+                                      <span className="text-main">
+                                        {dailyGenerationsMax} ({dailyGenerationsPeakPoint?.label ?? "-"})
+                                      </span>
+                                    </p>
+                                    <p>
+                                      Low/{isJoinedUsersHourlyRange ? "hour" : "day"}:{" "}
+                                      <span className="text-main">
+                                        {dailyGenerationsLowPoint?.count ?? 0} ({dailyGenerationsLowPoint?.label ?? "-"})
+                                      </span>
+                                    </p>
+                                    <p>
+                                      {joinedUsersLatestLabel}:{" "}
+                                      <span className="text-main">
+                                        {dailyGenerationsLatestPoint?.count ?? 0}
+                                      </span>
+                                    </p>
+                                    <p>
+                                      Median/{isJoinedUsersHourlyRange ? "hour" : "day"}:{" "}
+                                      <span className="text-main">
+                                        {dailyGenerationsMedian.toFixed(1)}
+                                      </span>
+                                    </p>
+                                    <p>
+                                      Active buckets:{" "}
+                                      <span className="text-main">
+                                        {dailyGenerationsActivePeriods}/{dailyGenerationsSeries.length} ({dailyGenerationsActiveRate.toFixed(0)}%)
+                                      </span>
+                                    </p>
+                                    <p>
+                                      Trend:{" "}
+                                      <span className="text-main">
+                                        {dailyGenerationsTrendLabel}
+                                      </span>
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
                           )}
                         </div>
                       </BentoGrid>
