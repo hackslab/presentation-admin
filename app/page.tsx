@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import {
   ChangeEvent,
   FormEvent,
+  MouseEvent as ReactMouseEvent,
+  PointerEvent as ReactPointerEvent,
   useCallback,
   useEffect,
   useMemo,
@@ -37,6 +39,7 @@ import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 import { AvatarCircles } from "@/components/ui/avatar-circles";
 import { NumberTicker } from "@/components/ui/number-ticker";
 import { ShineBorder } from "@/components/ui/shine-border";
+import { SmoothCursor } from "@/components/ui/smooth-cursor";
 import { cn } from "@/lib/utils";
 
 type ThemeMode = "light" | "dark";
@@ -234,6 +237,9 @@ const API_PROXY_PREFIX = "/backend";
 const THEME_STORAGE_KEY = "admin-panel-theme";
 const SESSION_STORAGE_KEY = "admin-panel-session";
 const STATS_CACHE_STORAGE_KEY = "admin-panel-stats-cache";
+const SMOOTH_CURSOR_MORSE_CODE = "...---...";
+const SMOOTH_CURSOR_MORSE_DASH_THRESHOLD_MS = 240;
+const SMOOTH_CURSOR_MORSE_IDLE_RESET_MS = 3000;
 const MAIN_THEME_PROMPT_LIMIT_MIN = 10;
 const MAIN_THEME_PROMPT_LIMIT_MAX = 4096;
 const FREE_PRESENTATION_GENERATION_LIMIT_MIN = 1;
@@ -298,6 +304,8 @@ const EMPTY_USER_LIFECYCLE: UserLifecycleSnapshot = {
   registeredNoGeneration: 0,
   registeredAndGenerated: 0,
 };
+
+let smoothCursorEnabledInMemory = false;
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object") {
@@ -668,6 +676,15 @@ function formatDate(dateString: string | null | undefined): string {
   }).format(parsedDate);
 }
 
+function shortenText(value: string, maxLength: number): string {
+  if (value.length <= maxLength) {
+    return value;
+  }
+
+  const safeLength = Math.max(maxLength - 3, 1);
+  return `${value.slice(0, safeLength)}...`;
+}
+
 function formatFileSizeMb(fileSizeKb: number | null | undefined): string {
   if (typeof fileSizeKb !== "number" || !Number.isFinite(fileSizeKb)) {
     return "-";
@@ -776,6 +793,9 @@ export default function Home() {
   const pathname = usePathname();
   const router = useRouter();
   const [theme, setTheme] = useState<ThemeMode>("light");
+  const [isSmoothCursorEnabled, setIsSmoothCursorEnabled] = useState(
+    () => smoothCursorEnabledInMemory,
+  );
   const [isHydrated, setIsHydrated] = useState(false);
 
   const [session, setSession] = useState<AuthResponse | null>(null);
@@ -862,6 +882,9 @@ export default function Home() {
   const [isBroadcastHistoryLoading, setIsBroadcastHistoryLoading] =
     useState(false);
   const [isBroadcastSending, setIsBroadcastSending] = useState(false);
+  const [deletingBroadcastId, setDeletingBroadcastId] = useState<number | null>(
+    null,
+  );
   const [broadcastImageFile, setBroadcastImageFile] = useState<File | null>(
     null,
   );
@@ -930,7 +953,11 @@ export default function Home() {
   const lastDashboardPathRef = useRef<string | null>(null);
   const broadcastMessageInputRef = useRef<HTMLTextAreaElement | null>(null);
   const broadcastImageInputRef = useRef<HTMLInputElement | null>(null);
+  const smoothCursorMorseProgressRef = useRef("");
+  const smoothCursorMorsePressStartedAtRef = useRef<number | null>(null);
+  const smoothCursorMorseResetTimeoutRef = useRef<number | null>(null);
 
+  const currentAdminId = profile?.id ?? session?.admin.id ?? null;
   const currentAdminRole = profile?.role ?? session?.admin.role ?? null;
   const isSuperAdmin = currentAdminRole === "SUPERADMIN";
 
@@ -1556,6 +1583,18 @@ export default function Home() {
     window.localStorage.setItem(THEME_STORAGE_KEY, theme);
     document.documentElement.classList.toggle("dark", theme === "dark");
   }, [isHydrated, theme]);
+
+  useEffect(() => {
+    smoothCursorEnabledInMemory = isSmoothCursorEnabled;
+  }, [isSmoothCursorEnabled]);
+
+  useEffect(() => {
+    return () => {
+      if (smoothCursorMorseResetTimeoutRef.current !== null) {
+        window.clearTimeout(smoothCursorMorseResetTimeoutRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedPresentation) {
@@ -2482,6 +2521,27 @@ export default function Home() {
   const showSystemPromptsSkeleton =
     isSystemPromptsLoading && systemPrompts.length === 0;
   const showAdminsSkeleton = isAdminsLoading && admins.length === 0;
+  const adminsForDisplay = useMemo(() => {
+    if (!isSuperAdmin || currentAdminId === null || admins.length <= 1) {
+      return admins;
+    }
+
+    const currentSuperAdminIndex = admins.findIndex(
+      (admin) => admin.id === currentAdminId && admin.role === "SUPERADMIN",
+    );
+
+    if (currentSuperAdminIndex <= 0) {
+      return admins;
+    }
+
+    const currentSuperAdmin = admins[currentSuperAdminIndex];
+
+    return [
+      currentSuperAdmin,
+      ...admins.slice(0, currentSuperAdminIndex),
+      ...admins.slice(currentSuperAdminIndex + 1),
+    ];
+  }, [admins, currentAdminId, isSuperAdmin]);
 
   const sectionCopy = useMemo(
     () => ({
@@ -2995,6 +3055,43 @@ export default function Home() {
     }
   };
 
+  const handleDeleteBroadcast = async (broadcast: BroadcastHistoryItem) => {
+    if (deletingBroadcastId !== null) {
+      return;
+    }
+
+    setDeletingBroadcastId(broadcast.id);
+
+    try {
+      await apiRequest<{ deleted: boolean; id: number }>(
+        `/admin/broadcasts/${broadcast.id}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      toast.success("Broadcast message deleted.");
+
+      if (broadcastHistory.length <= 1 && broadcastPage > 1) {
+        const previousPage = broadcastPage - 1;
+        const previousAfter = broadcastAfterHistory[previousPage - 1] ?? null;
+
+        setBroadcastAfterHistory((previous) => previous.slice(0, previousPage));
+
+        await fetchBroadcastPage({
+          page: previousPage,
+          after: previousAfter,
+        });
+      } else {
+        await fetchBroadcastCurrentPage();
+      }
+    } catch (error) {
+      toast.error(toErrorMessage(error));
+    } finally {
+      setDeletingBroadcastId(null);
+    }
+  };
+
   const saveRuntimeSettings = async (
     payload: Partial<RuntimeSettingsResponse>,
     successMessage: string,
@@ -3401,8 +3498,88 @@ export default function Home() {
     }
   };
 
+  const clearSmoothCursorMorseResetTimer = () => {
+    if (smoothCursorMorseResetTimeoutRef.current !== null) {
+      window.clearTimeout(smoothCursorMorseResetTimeoutRef.current);
+      smoothCursorMorseResetTimeoutRef.current = null;
+    }
+  };
+
+  const abortSmoothCursorMorseInput = () => {
+    smoothCursorMorseProgressRef.current = "";
+    smoothCursorMorsePressStartedAtRef.current = null;
+    clearSmoothCursorMorseResetTimer();
+  };
+
+  const pushSmoothCursorMorseSymbol = (symbol: "." | "-") => {
+    clearSmoothCursorMorseResetTimer();
+
+    const typedValue = `${smoothCursorMorseProgressRef.current}${symbol}`;
+    let nextValue = typedValue;
+
+    if (!SMOOTH_CURSOR_MORSE_CODE.startsWith(nextValue)) {
+      nextValue = SMOOTH_CURSOR_MORSE_CODE.startsWith(symbol) ? symbol : "";
+    }
+
+    if (nextValue === SMOOTH_CURSOR_MORSE_CODE) {
+      setIsSmoothCursorEnabled((current) => !current);
+      nextValue = "";
+    }
+
+    smoothCursorMorseProgressRef.current = nextValue;
+
+    if (!nextValue) {
+      return;
+    }
+
+    smoothCursorMorseResetTimeoutRef.current = window.setTimeout(() => {
+      smoothCursorMorseProgressRef.current = "";
+      smoothCursorMorseResetTimeoutRef.current = null;
+    }, SMOOTH_CURSOR_MORSE_IDLE_RESET_MS);
+  };
+
+  const handleSmoothCursorMorsePointerDown = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    event.preventDefault();
+    smoothCursorMorsePressStartedAtRef.current = Date.now();
+  };
+
+  const handleSmoothCursorMorsePointerUp = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (event.button !== 0) {
+      return;
+    }
+
+    const startedAt = smoothCursorMorsePressStartedAtRef.current;
+    if (startedAt === null) {
+      return;
+    }
+
+    smoothCursorMorsePressStartedAtRef.current = null;
+    const pressDurationMs = Date.now() - startedAt;
+    const symbol =
+      pressDurationMs >= SMOOTH_CURSOR_MORSE_DASH_THRESHOLD_MS ? "-" : ".";
+
+    pushSmoothCursorMorseSymbol(symbol);
+  };
+
+  const handleSmoothCursorMorseContextMenu = (
+    event: ReactMouseEvent<HTMLDivElement>,
+  ) => {
+    event.preventDefault();
+    smoothCursorMorsePressStartedAtRef.current = null;
+    pushSmoothCursorMorseSymbol("-");
+  };
+
   return (
     <div className="dashboard-shell min-h-screen" data-theme={theme}>
+      {isHydrated && isSmoothCursorEnabled ? <SmoothCursor /> : null}
       <div
         className="relative min-h-screen"
         style={{
@@ -3415,7 +3592,14 @@ export default function Home() {
         <div className="relative mx-auto max-w-[1400px] p-4 md:p-8">
           <div className="grid gap-6 lg:grid-cols-[280px_1fr]">
             <aside className="surface-glass flex h-fit self-start flex-col rounded-3xl p-5 lg:sticky lg:top-8">
-              <div className="relative overflow-hidden rounded-2xl p-4 surface-muted">
+              <div
+                className="relative overflow-hidden rounded-2xl p-4 select-none surface-muted"
+                onPointerDown={handleSmoothCursorMorsePointerDown}
+                onPointerUp={handleSmoothCursorMorsePointerUp}
+                onPointerLeave={abortSmoothCursorMorseInput}
+                onPointerCancel={abortSmoothCursorMorseInput}
+                onContextMenu={handleSmoothCursorMorseContextMenu}
+              >
                 <ShineBorder
                   borderWidth={1}
                   duration={9}
@@ -3482,7 +3666,7 @@ export default function Home() {
                     </p>
                   </div>
 
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-wrap items-center justify-end gap-2">
                     <button
                       type="button"
                       onClick={() => {
@@ -3506,33 +3690,37 @@ export default function Home() {
                       </span>
                     </button>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void handleLogout();
-                      }}
-                      disabled={!session}
-                      aria-label="Logout"
-                      title="Logout"
-                      className="inline-flex size-9 items-center justify-center rounded-xl border border-rose-300/50 bg-rose-200/30 text-rose-700 transition hover:bg-rose-300/35 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      <LogOut className="size-4" aria-hidden="true" />
-                      <span className="sr-only">Logout</span>
-                    </button>
+                    <div className="inline-flex items-center overflow-hidden rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] text-main">
+                      {profile ? (
+                        <Link
+                          href="/admins"
+                          className="inline-flex max-w-[180px] items-center border-r border-[var(--surface-border)] px-3 py-2 text-xs font-semibold text-main transition hover:bg-[var(--surface-3)] sm:max-w-none"
+                          title="Open admins page"
+                        >
+                          <span className="truncate">{profile.name}</span>
+                        </Link>
+                      ) : isLoading ? (
+                        <span className="inline-flex items-center border-r border-[var(--surface-border)] px-3 py-2">
+                          <SkeletonBlock className="h-3.5 w-24" />
+                        </span>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          void handleLogout();
+                        }}
+                        disabled={!session}
+                        aria-label="Logout"
+                        title="Logout"
+                        className="inline-flex cursor-pointer items-center rounded-r-xl border-l border-rose-300/50 bg-rose-200/30 px-3 py-2 text-rose-700 transition hover:bg-rose-300/35 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        <LogOut className="size-4" aria-hidden="true" />
+                        <span className="sr-only">Logout</span>
+                      </button>
+                    </div>
                   </div>
                 </div>
-
-                {profile ? (
-                  <p className="mt-4 text-xs text-muted">
-                    Signed in as{" "}
-                    <span className="font-semibold text-main">
-                      {profile.name}
-                    </span>{" "}
-                    ({profile.role}) - @{profile.username}
-                  </p>
-                ) : isLoading ? (
-                  <SkeletonBlock className="mt-4 h-4 w-64" />
-                ) : null}
               </header>
 
               {!session ? (
@@ -5067,75 +5255,94 @@ export default function Home() {
                                         </tr>
                                       ),
                                     )
-                                  : users.map((user) => (
-                                      <tr
-                                        key={user.id}
-                                        className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
-                                      >
-                                        <td className="px-3 py-2 text-main">
-                                          <div className="flex items-center gap-2">
-                                            {user.profileImageUrl ? (
-                                              <AvatarCircles
-                                                avatarUrls={[
-                                                  {
-                                                    imageUrl:
-                                                      user.profileImageUrl,
-                                                    profileUrl: user.username
-                                                      ? `https://t.me/${user.username}`
-                                                      : undefined,
-                                                    alt: user.firstName
-                                                      ? `${user.firstName} profile photo`
-                                                      : "User profile photo",
-                                                  },
-                                                ]}
-                                              />
-                                            ) : (
-                                              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--surface-border)] bg-[var(--surface-2)] text-[0.65rem] font-semibold text-muted">
-                                                {(
-                                                  user.firstName?.[0] ??
-                                                  user.lastName?.[0] ??
-                                                  "?"
-                                                ).toUpperCase()}
-                                              </span>
-                                            )}
+                                  : users.map((user) => {
+                                      const fullName =
+                                        [user.firstName, user.lastName]
+                                          .filter(Boolean)
+                                          .join(" ") || "Unknown user";
+                                      const shortName = shortenText(fullName, 36);
+                                      const fullUsername = user.username
+                                        ? `@${user.username}`
+                                        : "@no_username";
+                                      const shortUsername = shortenText(
+                                        fullUsername,
+                                        30,
+                                      );
 
-                                            <div>
-                                              <p className="font-medium">
-                                                {[user.firstName, user.lastName]
-                                                  .filter(Boolean)
-                                                  .join(" ") || "Unknown user"}
-                                              </p>
-                                              <p className="text-xs text-muted">
-                                                {user.username ? (
-                                                  <a
-                                                    href={`https://t.me/${user.username}`}
-                                                    target="_blank"
-                                                    rel="noreferrer"
-                                                    className="underline decoration-transparent transition hover:decoration-current"
-                                                  >
-                                                    @{user.username}
-                                                  </a>
-                                                ) : (
-                                                  "@no_username"
-                                                )}
-                                              </p>
+                                      return (
+                                        <tr
+                                          key={user.id}
+                                          className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
+                                        >
+                                          <td className="px-3 py-2 text-main">
+                                            <div className="flex items-center gap-2">
+                                              {user.profileImageUrl ? (
+                                                <AvatarCircles
+                                                  avatarUrls={[
+                                                    {
+                                                      imageUrl:
+                                                        user.profileImageUrl,
+                                                      profileUrl: user.username
+                                                        ? `https://t.me/${user.username}`
+                                                        : undefined,
+                                                      alt: user.firstName
+                                                        ? `${user.firstName} profile photo`
+                                                        : "User profile photo",
+                                                    },
+                                                  ]}
+                                                />
+                                              ) : (
+                                                <span className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-[var(--surface-border)] bg-[var(--surface-2)] text-[0.65rem] font-semibold text-muted">
+                                                  {(
+                                                    user.firstName?.[0] ??
+                                                    user.lastName?.[0] ??
+                                                    "?"
+                                                  ).toUpperCase()}
+                                                </span>
+                                              )}
+
+                                              <div className="max-w-[220px]">
+                                                <p
+                                                  className="truncate font-medium"
+                                                  title={fullName}
+                                                >
+                                                  {shortName}
+                                                </p>
+                                                <p
+                                                  className="truncate text-xs text-muted"
+                                                  title={fullUsername}
+                                                >
+                                                  {user.username ? (
+                                                    <a
+                                                      href={`https://t.me/${user.username}`}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="inline-block max-w-full truncate underline decoration-transparent transition hover:decoration-current"
+                                                    >
+                                                      {shortUsername}
+                                                    </a>
+                                                  ) : (
+                                                    shortUsername
+                                                  )}
+                                                </p>
+                                              </div>
                                             </div>
-                                          </div>
-                                        </td>
-                                        <td className="px-3 py-2 text-main">
-                                          {user.telegramId}
-                                        </td>
-                                        <td className="px-3 py-2 text-main">
-                                          {formatDate(user.createdAt)}
-                                        </td>
-                                        <td className="px-3 py-2 text-main">
-                                          {user.totalGenerations}
-                                        </td>
-                                        <td className="px-3 py-2 text-main">
-                                          {formatDate(user.lastGenerationAt)}
-                                        </td>
-                                      </tr>
-                                    ))}
+                                          </td>
+                                          <td className="px-3 py-2 text-main">
+                                            {user.telegramId}
+                                          </td>
+                                          <td className="px-3 py-2 text-main">
+                                            {formatDate(user.createdAt)}
+                                          </td>
+                                          <td className="px-3 py-2 text-main">
+                                            {user.totalGenerations}
+                                          </td>
+                                          <td className="px-3 py-2 text-main">
+                                            {formatDate(user.lastGenerationAt)}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
                               </tbody>
                             </table>
 
@@ -5809,13 +6016,40 @@ export default function Home() {
                                           <p className="text-xs text-muted">
                                             {formatDate(item.createdAt)}
                                           </p>
-                                          <p className="text-xs text-muted">
-                                            by{" "}
-                                            {item.adminUsername
-                                              ? `@${item.adminUsername}`
-                                              : (item.adminName ??
-                                                "Unknown admin")}
-                                          </p>
+                                          <div className="flex items-center gap-2">
+                                            <p className="text-xs text-muted">
+                                              by{" "}
+                                              {item.adminUsername
+                                                ? `@${item.adminUsername}`
+                                                : (item.adminName ??
+                                                  "Unknown admin")}
+                                            </p>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                void handleDeleteBroadcast(item);
+                                              }}
+                                              disabled={deletingBroadcastId !== null}
+                                              aria-label="Delete broadcast message"
+                                              title="Delete broadcast message"
+                                              className="inline-flex size-7 items-center justify-center rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] text-main transition hover:border-[var(--danger-btn-border)] hover:text-[var(--danger-btn-text)] disabled:cursor-not-allowed disabled:opacity-60"
+                                            >
+                                              {deletingBroadcastId === item.id ? (
+                                                <Loader2
+                                                  className="size-3 animate-spin"
+                                                  aria-hidden="true"
+                                                />
+                                              ) : (
+                                                <Trash2
+                                                  className="size-3"
+                                                  aria-hidden="true"
+                                                />
+                                              )}
+                                              <span className="sr-only">
+                                                Delete broadcast message
+                                              </span>
+                                            </button>
+                                          </div>
                                         </div>
 
                                         <div
@@ -5932,14 +6166,14 @@ export default function Home() {
                                         </div>
                                       ),
                                     )
-                                  ) : admins.length === 0 ? (
+                                  ) : adminsForDisplay.length === 0 ? (
                                     <p className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-1)] px-3 py-2 text-sm text-muted">
                                       No admins found.
                                     </p>
                                   ) : (
-                                    admins.map((admin) => {
+                                    adminsForDisplay.map((admin) => {
                                       const isSelfAdmin =
-                                        admin.id === profile?.id;
+                                        admin.id === currentAdminId;
 
                                       return (
                                         <div

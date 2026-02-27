@@ -99,3 +99,10 @@ pre {
   animation: none;
   mix-blend-mode: normal;
 }
+
+.smooth-cursor-enabled,
+.smooth-cursor-enabled *,
+.smooth-cursor-enabled *::before,
+.smooth-cursor-enabled *::after {
+  cursor: none !important;
+}
