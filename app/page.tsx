@@ -112,6 +112,7 @@ interface PresentationMetadata {
 
 interface PresentationRow {
   id: number;
+  userId?: number | null;
   status: PresentationStatus;
   createdAt: string;
   telegramId: string;
@@ -699,6 +700,14 @@ function formatFileSizeMb(fileSizeKb: number | null | undefined): string {
   }).format(fileSizeMb)} MB`;
 }
 
+function normalizeUserId(value: number | null | undefined): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    return null;
+  }
+
+  return value;
+}
+
 function clampNumber(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -866,6 +875,8 @@ export default function Home() {
   >([null]);
   const [presentationsPageInfo, setPresentationsPageInfo] =
     useState<ConnectionPageInfo>(EMPTY_CONNECTION_PAGE_INFO);
+  const [openingPresentationUserTelegramId, setOpeningPresentationUserTelegramId] =
+    useState<string | null>(null);
 
   const [broadcastMessage, setBroadcastMessage] = useState("");
   const [, setBroadcastResult] = useState<BroadcastResult | null>(null);
@@ -951,6 +962,9 @@ export default function Home() {
   const profileSyncCompletionToastJobIdRef = useRef<number | null>(null);
   const profileSyncWasRunningRef = useRef(false);
   const lastDashboardPathRef = useRef<string | null>(null);
+  const presentationUserIdByTelegramRef = useRef<Map<string, number>>(
+    new Map(),
+  );
   const broadcastMessageInputRef = useRef<HTMLTextAreaElement | null>(null);
   const broadcastImageInputRef = useRef<HTMLInputElement | null>(null);
   const smoothCursorMorseProgressRef = useRef("");
@@ -2696,6 +2710,8 @@ export default function Home() {
     setPresentationsPage(1);
     setPresentationsAfterHistory([null]);
     setPresentationsPageInfo(EMPTY_CONNECTION_PAGE_INFO);
+    setOpeningPresentationUserTelegramId(null);
+    presentationUserIdByTelegramRef.current.clear();
     setBroadcastMessage("");
     setBroadcastResult(null);
     setBroadcastHistory([]);
@@ -2766,6 +2782,59 @@ export default function Home() {
       toast.error(toErrorMessage(error));
     }
   };
+
+  const handleOpenPresentationUser = useCallback(
+    async (presentation: PresentationRow) => {
+      const directUserId = normalizeUserId(presentation.userId);
+
+      if (directUserId) {
+        router.push(`/users/${directUserId}`);
+        return;
+      }
+
+      const cachedUserId = presentationUserIdByTelegramRef.current.get(
+        presentation.telegramId,
+      );
+
+      if (cachedUserId) {
+        router.push(`/users/${cachedUserId}`);
+        return;
+      }
+
+      setOpeningPresentationUserTelegramId(presentation.telegramId);
+
+      try {
+        const query = new URLSearchParams();
+        query.set("search", presentation.telegramId);
+        query.set("first", "10");
+
+        const data = await apiRequest<UsersConnectionResponse>(
+          `/admin/users?${query.toString()}`,
+        );
+        const matchedUser =
+          data.nodes.find((user) => user.telegramId === presentation.telegramId) ??
+          data.nodes[0];
+
+        if (!matchedUser) {
+          toast.error("User profile was not found.");
+          return;
+        }
+
+        presentationUserIdByTelegramRef.current.set(
+          presentation.telegramId,
+          matchedUser.id,
+        );
+        router.push(`/users/${matchedUser.id}`);
+      } catch (error) {
+        toast.error(toErrorMessage(error));
+      } finally {
+        setOpeningPresentationUserTelegramId((previous) =>
+          previous === presentation.telegramId ? null : previous,
+        );
+      }
+    },
+    [apiRequest, router],
+  );
 
   const handleSyncAllUserProfileImages = async () => {
     if (profileSyncRequestInFlightRef.current || isSyncingUserProfileImages) {
@@ -5543,7 +5612,15 @@ export default function Home() {
                                           </tr>
                                         ),
                                       )
-                                    : presentations.map((item) => (
+                                    : presentations.map((item) => {
+                                        const presentationUserId = normalizeUserId(
+                                          item.userId,
+                                        );
+                                        const isOpeningUser =
+                                          openingPresentationUserTelegramId ===
+                                          item.telegramId;
+
+                                        return (
                                         <tr
                                           key={item.id}
                                           className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
@@ -5566,9 +5643,42 @@ export default function Home() {
                                             </p>
                                           </td>
                                           <td className="px-3 py-2 text-main">
-                                            <p>{item.firstName}</p>
+                                            <p>
+                                              {presentationUserId ? (
+                                                <Link
+                                                  href={`/users/${presentationUserId}`}
+                                                  className="inline-block max-w-full truncate font-medium underline decoration-transparent transition hover:decoration-current"
+                                                >
+                                                  {item.firstName}
+                                                </Link>
+                                              ) : (
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    void handleOpenPresentationUser(
+                                                      item,
+                                                    );
+                                                  }}
+                                                  disabled={isOpeningUser}
+                                                  className="inline-block max-w-full cursor-pointer truncate font-medium underline decoration-transparent transition hover:decoration-current disabled:cursor-wait disabled:opacity-70"
+                                                >
+                                                  {item.firstName}
+                                                </button>
+                                              )}
+                                            </p>
                                             <p className="text-xs text-muted">
-                                              @{item.username ?? "no_username"}
+                                              {item.username ? (
+                                                <a
+                                                  href={`https://t.me/${item.username}`}
+                                                  target="_blank"
+                                                  rel="noopener noreferrer"
+                                                  className="inline-block max-w-full truncate underline decoration-transparent transition hover:decoration-current"
+                                                >
+                                                  @{item.username}
+                                                </a>
+                                              ) : (
+                                                "@no_username"
+                                              )}
                                             </p>
                                           </td>
                                           <td className="px-3 py-2">
@@ -5655,7 +5765,8 @@ export default function Home() {
                                             </div>
                                           </td>
                                         </tr>
-                                      ))}
+                                        );
+                                      })}
                                 </tbody>
                               </table>
                             </div>
@@ -6716,11 +6827,37 @@ export default function Home() {
                         <p>
                           User:{" "}
                           <span className="font-semibold">
-                            {selectedPresentation.firstName}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void handleOpenPresentationUser(
+                                  selectedPresentation,
+                                );
+                              }}
+                              disabled={
+                                openingPresentationUserTelegramId ===
+                                selectedPresentation.telegramId
+                              }
+                              className="cursor-pointer underline decoration-transparent transition hover:text-main hover:decoration-current disabled:cursor-wait disabled:opacity-70"
+                            >
+                              {selectedPresentation.firstName}
+                            </button>
                           </span>
                         </p>
                         <p className="mt-1 text-xs text-muted">
-                          @{selectedPresentation.username ?? "no_username"} -
+                          {selectedPresentation.username ? (
+                            <a
+                              href={`https://t.me/${selectedPresentation.username}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="underline decoration-transparent transition hover:text-main hover:decoration-current"
+                            >
+                              @{selectedPresentation.username}
+                            </a>
+                          ) : (
+                            "@no_username"
+                          )}{" "}
+                          -
                           Telegram ID: {selectedPresentation.telegramId}
                         </p>
                       </div>
