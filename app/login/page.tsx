@@ -30,8 +30,6 @@ interface ApiError {
   error?: string;
 }
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:3000";
 const API_PROXY_PREFIX = "/backend";
 const THEME_STORAGE_KEY = "admin-panel-theme";
 const SESSION_STORAGE_KEY = "admin-panel-session";

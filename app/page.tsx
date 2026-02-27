@@ -1,4 +1,5 @@
 "use client";
+/* eslint-disable @next/next/no-img-element */
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -867,8 +868,7 @@ export default function Home() {
     useState<ConnectionPageInfo>(EMPTY_CONNECTION_PAGE_INFO);
 
   const [broadcastMessage, setBroadcastMessage] = useState("");
-  const [broadcastResult, setBroadcastResult] =
-    useState<BroadcastResult | null>(null);
+  const [, setBroadcastResult] = useState<BroadcastResult | null>(null);
   const [broadcastHistory, setBroadcastHistory] = useState<
     BroadcastHistoryItem[]
   >([]);
