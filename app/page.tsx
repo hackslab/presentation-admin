@@ -5302,12 +5302,13 @@ export default function Home() {
                                               )}
 
                                               <div className="max-w-[220px]">
-                                                <p
-                                                  className="truncate font-medium"
+                                                <Link
+                                                  href={`/users/${user.id}`}
+                                                  className="block truncate font-medium text-main underline decoration-transparent transition hover:decoration-current"
                                                   title={fullName}
                                                 >
                                                   {shortName}
-                                                </p>
+                                                </Link>
                                                 <p
                                                   className="truncate text-xs text-muted"
                                                   title={fullUsername}
