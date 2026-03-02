@@ -116,6 +116,7 @@ interface UserRow {
   profileImageUrl: string | null;
   phoneNumber: string | null;
   createdAt: string;
+  totalGeneratedCount?: number;
   totalGenerations: number;
   usedToday: number;
   lastGenerationAt: string | null;
@@ -699,6 +700,20 @@ function formatDate(dateString: string | null | undefined): string {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(parsedDate);
+}
+
+function getUserTotalGeneratedCount(user: UserRow): number {
+  const rawValue =
+    typeof user.totalGeneratedCount === "number" &&
+    Number.isFinite(user.totalGeneratedCount)
+      ? user.totalGeneratedCount
+      : user.totalGenerations;
+
+  if (typeof rawValue !== "number" || !Number.isFinite(rawValue)) {
+    return 0;
+  }
+
+  return Math.max(0, rawValue);
 }
 
 function shortenText(value: string, maxLength: number): string {
@@ -2579,7 +2594,9 @@ export default function Home() {
         case "telegramId":
           return compareString(left.telegramId, right.telegramId);
         case "totalGenerations":
-          return left.totalGenerations - right.totalGenerations;
+          return (
+            getUserTotalGeneratedCount(left) - getUserTotalGeneratedCount(right)
+          );
         case "lastGenerationAt": {
           const leftTime = left.lastGenerationAt ? new Date(left.lastGenerationAt).getTime() : 0;
           const rightTime = right.lastGenerationAt ? new Date(right.lastGenerationAt).getTime() : 0;
@@ -5609,7 +5626,7 @@ export default function Home() {
                                             {formatDate(user.createdAt)}
                                           </td>
                                           <td className="px-3 py-2 text-main">
-                                            {user.totalGenerations}
+                                            {getUserTotalGeneratedCount(user)}
                                           </td>
                                           <td className="px-3 py-2 text-main">
                                             {formatDate(user.lastGenerationAt)}

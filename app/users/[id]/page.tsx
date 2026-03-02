@@ -94,6 +94,7 @@ interface UserDetails {
   broadcastBlockedAt: string | null;
   broadcastBlockedReason: string | null;
   createdAt: string;
+  totalGeneratedCount?: number;
   totalGenerations: number;
   usedToday: number;
   lastGenerationAt: string | null;
@@ -191,6 +192,20 @@ function formatDate(value: string | null | undefined): string {
   }).format(parsedDate);
 }
 
+function getUserTotalGeneratedCount(user: UserDetails): number {
+  const rawValue =
+    typeof user.totalGeneratedCount === "number" &&
+    Number.isFinite(user.totalGeneratedCount)
+      ? user.totalGeneratedCount
+      : user.totalGenerations;
+
+  if (typeof rawValue !== "number" || !Number.isFinite(rawValue)) {
+    return 0;
+  }
+
+  return Math.max(0, rawValue);
+}
+
 function formatBoolean(value: boolean): string {
   return value ? "Yes" : "No";
 }
@@ -250,8 +265,9 @@ export default function UserDetailsPage() {
   const [presentationsPageInfo, setPresentationsPageInfo] =
     useState<ConnectionPageInfo>(EMPTY_CONNECTION_PAGE_INFO);
 
-  const [presentationStatus, setPresentationStatus] =
-    useState<PresentationStatus | "all">("all");
+  const [presentationStatus, setPresentationStatus] = useState<
+    PresentationStatus | "all"
+  >("all");
   const [presentationLanguage, setPresentationLanguage] =
     useState<PresentationLanguageFilter>("all");
   const [presentationSortOrder, setPresentationSortOrder] =
@@ -444,7 +460,10 @@ export default function UserDetailsPage() {
   const fullName = [user?.firstName, user?.lastName].filter(Boolean).join(" ");
 
   const handleNextPage = async () => {
-    if (!presentationsPageInfo.hasNextPage || !presentationsPageInfo.endCursor) {
+    if (
+      !presentationsPageInfo.hasNextPage ||
+      !presentationsPageInfo.endCursor
+    ) {
       return;
     }
 
@@ -593,7 +612,10 @@ export default function UserDetailsPage() {
                   className="inline-flex items-center gap-2 rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isSyncingProfileImage ? (
-                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    <Loader2
+                      className="size-4 animate-spin"
+                      aria-hidden="true"
+                    />
                   ) : (
                     <RefreshCw className="size-4" aria-hidden="true" />
                   )}
@@ -649,7 +671,11 @@ export default function UserDetailsPage() {
                     />
                   ) : (
                     <div className="inline-flex h-16 w-16 items-center justify-center rounded-2xl border border-[var(--surface-border)] bg-[var(--surface-2)] text-xl font-semibold text-muted">
-                      {(user.firstName?.[0] ?? user.lastName?.[0] ?? "?").toUpperCase()}
+                      {(
+                        user.firstName?.[0] ??
+                        user.lastName?.[0] ??
+                        "?"
+                      ).toUpperCase()}
                     </div>
                   )}
                   <span className="text-[0.68rem] text-muted underline decoration-transparent group-hover:decoration-current">
@@ -683,15 +709,23 @@ export default function UserDetailsPage() {
               <div className="mt-4 grid gap-2 text-sm text-main sm:grid-cols-2 lg:grid-cols-3">
                 <p>Phone: {user.phoneNumber || "-"}</p>
                 <p>Joined: {formatDate(user.createdAt)}</p>
-                <p>Total generations: {user.totalGenerations}</p>
+                <p>Total generations: {getUserTotalGeneratedCount(user)}</p>
                 <p>Used in last 24h: {user.usedToday}</p>
                 <p>Last generation: {formatDate(user.lastGenerationAt)}</p>
                 <p>Active: {formatBoolean(user.isActive)}</p>
                 <p>Broadcast active: {formatBoolean(user.isBroadcastActive)}</p>
-                <p>Broadcast blocked at: {formatDate(user.broadcastBlockedAt)}</p>
-                <p>Broadcast blocked reason: {user.broadcastBlockedReason || "-"}</p>
-                <p>Profile checked at: {formatDate(user.profileImageCheckedAt)}</p>
-                <p>Profile updated at: {formatDate(user.profileImageUpdatedAt)}</p>
+                <p>
+                  Broadcast blocked at: {formatDate(user.broadcastBlockedAt)}
+                </p>
+                <p>
+                  Broadcast blocked reason: {user.broadcastBlockedReason || "-"}
+                </p>
+                <p>
+                  Profile checked at: {formatDate(user.profileImageCheckedAt)}
+                </p>
+                <p>
+                  Profile updated at: {formatDate(user.profileImageUpdatedAt)}
+                </p>
               </div>
             </article>
           ) : null}
@@ -699,7 +733,9 @@ export default function UserDetailsPage() {
           <article className="surface-glass rounded-3xl p-5 sm:p-6">
             <div className="flex flex-wrap items-end justify-between gap-3">
               <div>
-                <h3 className="text-lg font-semibold text-main">Generated presentations</h3>
+                <h3 className="text-lg font-semibold text-main">
+                  Generated presentations
+                </h3>
                 <p className="text-sm text-muted">
                   Full list of presentations generated by this user.
                 </p>
@@ -709,7 +745,9 @@ export default function UserDetailsPage() {
                 <select
                   value={presentationStatus}
                   onChange={(event) => {
-                    setPresentationStatus(event.target.value as PresentationStatus | "all");
+                    setPresentationStatus(
+                      event.target.value as PresentationStatus | "all",
+                    );
                   }}
                   className="rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-sm text-main outline-none focus:border-[var(--accent)]"
                 >
@@ -765,7 +803,10 @@ export default function UserDetailsPage() {
                   className="inline-flex size-9 items-center justify-center rounded-xl border border-[var(--surface-border)] bg-[var(--surface-2)] text-main disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isLoading ? (
-                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                    <Loader2
+                      className="size-4 animate-spin"
+                      aria-hidden="true"
+                    />
                   ) : (
                     <RefreshCw className="size-4" aria-hidden="true" />
                   )}
@@ -800,7 +841,9 @@ export default function UserDetailsPage() {
                           key={presentation.id}
                           className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
                         >
-                          <td className="px-3 py-2 font-mono text-main">#{presentation.id}</td>
+                          <td className="px-3 py-2 font-mono text-main">
+                            #{presentation.id}
+                          </td>
                           <td className="px-3 py-2">
                             <span
                               className={`inline-flex rounded-full border px-2 py-1 text-xs font-semibold uppercase ${statusPillClass(presentation.status)}`}
@@ -822,14 +865,19 @@ export default function UserDetailsPage() {
                             ) : null}
                           </td>
                           <td className="max-w-[260px] px-3 py-2 text-main">
-                            <p className="truncate" title={metadata?.prompt || "-"}>
+                            <p
+                              className="truncate"
+                              title={metadata?.prompt || "-"}
+                            >
                               {metadata?.prompt || "-"}
                             </p>
                           </td>
                           <td className="px-3 py-2 text-main">
                             {metadata?.language?.toUpperCase() || "-"}
                           </td>
-                          <td className="px-3 py-2 text-main">{metadata?.pageCount ?? "-"}</td>
+                          <td className="px-3 py-2 text-main">
+                            {metadata?.pageCount ?? "-"}
+                          </td>
                           <td className="px-3 py-2 text-main">
                             <p>{metadata?.fileName || "-"}</p>
                             <p className="text-xs text-muted">
@@ -847,7 +895,10 @@ export default function UserDetailsPage() {
                                 rel="noreferrer"
                                 className="inline-flex items-center gap-1 rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] px-2 py-1 text-xs text-main"
                               >
-                                <Download className="size-3.5" aria-hidden="true" />
+                                <Download
+                                  className="size-3.5"
+                                  aria-hidden="true"
+                                />
                                 Open
                               </a>
                             ) : (
@@ -862,12 +913,15 @@ export default function UserDetailsPage() {
               </div>
 
               {!isLoading && presentations.length === 0 ? (
-                <p className="px-3 py-5 text-sm text-muted">No presentations found.</p>
+                <p className="px-3 py-5 text-sm text-muted">
+                  No presentations found.
+                </p>
               ) : null}
 
               <div className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--surface-border)] bg-[var(--surface-2)] px-3 py-2 text-xs text-muted">
                 <p>
-                  Page {presentationsPage} - {presentations.length} shown of {presentationsTotalCount}
+                  Page {presentationsPage} - {presentations.length} shown of{" "}
+                  {presentationsTotalCount}
                 </p>
                 <div className="flex items-center gap-2">
                   <button
@@ -913,7 +967,8 @@ export default function UserDetailsPage() {
                       Telegram profile photos
                     </h3>
                     <p className="text-xs text-muted">
-                      Showing {telegramProfilePhotos.length} of {telegramProfilePhotoTotalCount}
+                      Showing {telegramProfilePhotos.length} of{" "}
+                      {telegramProfilePhotoTotalCount}
                     </p>
                   </div>
 
@@ -932,13 +987,18 @@ export default function UserDetailsPage() {
                 <div className="max-h-[calc(90vh-64px)] overflow-y-auto p-4 sm:p-5">
                   {isProfileModalLoading ? (
                     <p className="inline-flex items-center gap-2 text-sm text-main">
-                      <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+                      <Loader2
+                        className="size-4 animate-spin"
+                        aria-hidden="true"
+                      />
                       Loading images from Telegram...
                     </p>
                   ) : profileModalError ? (
                     <p className="text-sm text-rose-600">{profileModalError}</p>
                   ) : telegramProfilePhotos.length === 0 ? (
-                    <p className="text-sm text-muted">No Telegram profile photos found.</p>
+                    <p className="text-sm text-muted">
+                      No Telegram profile photos found.
+                    </p>
                   ) : (
                     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
                       {telegramProfilePhotos.map((photo) => (
