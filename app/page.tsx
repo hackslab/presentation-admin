@@ -919,8 +919,10 @@ export default function Home() {
   const [presentationsTableSort, setPresentationsTableSort] = useState<
     TableSortState<PresentationTableSortKey>
   >({ key: "createdAt", direction: "desc" });
-  const [openingPresentationUserTelegramId, setOpeningPresentationUserTelegramId] =
-    useState<string | null>(null);
+  const [
+    openingPresentationUserTelegramId,
+    setOpeningPresentationUserTelegramId,
+  ] = useState<string | null>(null);
 
   const [broadcastMessage, setBroadcastMessage] = useState("");
   const [, setBroadcastResult] = useState<BroadcastResult | null>(null);
@@ -2581,14 +2583,23 @@ export default function Home() {
   const showAdminsSkeleton = isAdminsLoading && admins.length === 0;
 
   const usersForDisplay = useMemo(() => {
-    const compareString = (left: string | null | undefined, right: string | null | undefined) =>
-      (left ?? "").localeCompare(right ?? "", undefined, { sensitivity: "base" });
+    const compareString = (
+      left: string | null | undefined,
+      right: string | null | undefined,
+    ) =>
+      (left ?? "").localeCompare(right ?? "", undefined, {
+        sensitivity: "base",
+      });
 
     const sorted = [...users].sort((left, right) => {
       switch (usersTableSort.key) {
         case "name": {
-          const leftName = [left.firstName, left.lastName].filter(Boolean).join(" ");
-          const rightName = [right.firstName, right.lastName].filter(Boolean).join(" ");
+          const leftName = [left.firstName, left.lastName]
+            .filter(Boolean)
+            .join(" ");
+          const rightName = [right.firstName, right.lastName]
+            .filter(Boolean)
+            .join(" ");
           return compareString(leftName, rightName);
         }
         case "telegramId":
@@ -2598,13 +2609,20 @@ export default function Home() {
             getUserTotalGeneratedCount(left) - getUserTotalGeneratedCount(right)
           );
         case "lastGenerationAt": {
-          const leftTime = left.lastGenerationAt ? new Date(left.lastGenerationAt).getTime() : 0;
-          const rightTime = right.lastGenerationAt ? new Date(right.lastGenerationAt).getTime() : 0;
+          const leftTime = left.lastGenerationAt
+            ? new Date(left.lastGenerationAt).getTime()
+            : 0;
+          const rightTime = right.lastGenerationAt
+            ? new Date(right.lastGenerationAt).getTime()
+            : 0;
           return leftTime - rightTime;
         }
         case "createdAt":
         default:
-          return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+          return (
+            new Date(left.createdAt).getTime() -
+            new Date(right.createdAt).getTime()
+          );
       }
     });
 
@@ -2612,8 +2630,13 @@ export default function Home() {
   }, [users, usersTableSort]);
 
   const presentationsForDisplay = useMemo(() => {
-    const compareString = (left: string | null | undefined, right: string | null | undefined) =>
-      (left ?? "").localeCompare(right ?? "", undefined, { sensitivity: "base" });
+    const compareString = (
+      left: string | null | undefined,
+      right: string | null | undefined,
+    ) =>
+      (left ?? "").localeCompare(right ?? "", undefined, {
+        sensitivity: "base",
+      });
 
     const sorted = [...presentations].sort((left, right) => {
       switch (presentationsTableSort.key) {
@@ -2622,14 +2645,21 @@ export default function Home() {
         case "prompt":
           return compareString(left.metadata?.prompt, right.metadata?.prompt);
         case "user": {
-          const leftValue = left.username ? `@${left.username}` : left.firstName;
-          const rightValue = right.username ? `@${right.username}` : right.firstName;
+          const leftValue = left.username
+            ? `@${left.username}`
+            : left.firstName;
+          const rightValue = right.username
+            ? `@${right.username}`
+            : right.firstName;
           return compareString(leftValue, rightValue);
         }
         case "status":
           return compareString(left.status, right.status);
         case "language":
-          return compareString(left.metadata?.language, right.metadata?.language);
+          return compareString(
+            left.metadata?.language,
+            right.metadata?.language,
+          );
         case "pageCount": {
           const leftCount = left.metadata?.pageCount ?? -1;
           const rightCount = right.metadata?.pageCount ?? -1;
@@ -2637,11 +2667,16 @@ export default function Home() {
         }
         case "createdAt":
         default:
-          return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+          return (
+            new Date(left.createdAt).getTime() -
+            new Date(right.createdAt).getTime()
+          );
       }
     });
 
-    return presentationsTableSort.direction === "asc" ? sorted : sorted.reverse();
+    return presentationsTableSort.direction === "asc"
+      ? sorted
+      : sorted.reverse();
   }, [presentations, presentationsTableSort]);
 
   const toggleUsersTableSort = useCallback((key: UserTableSortKey) => {
@@ -2963,8 +2998,9 @@ export default function Home() {
           `/admin/users?${query.toString()}`,
         );
         const matchedUser =
-          data.nodes.find((user) => user.telegramId === presentation.telegramId) ??
-          data.nodes[0];
+          data.nodes.find(
+            (user) => user.telegramId === presentation.telegramId,
+          ) ?? data.nodes[0];
 
         if (!matchedUser) {
           toast.error("User profile was not found.");
@@ -5490,13 +5526,16 @@ export default function Home() {
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        toggleUsersTableSort("totalGenerations");
+                                        toggleUsersTableSort(
+                                          "totalGenerations",
+                                        );
                                       }}
                                       className="inline-flex items-center gap-1"
                                     >
                                       Total generated
                                       {renderSortIcon(
-                                        usersTableSort.key === "totalGenerations",
+                                        usersTableSort.key ===
+                                          "totalGenerations",
                                         usersTableSort.direction,
                                       )}
                                     </button>
@@ -5505,13 +5544,16 @@ export default function Home() {
                                     <button
                                       type="button"
                                       onClick={() => {
-                                        toggleUsersTableSort("lastGenerationAt");
+                                        toggleUsersTableSort(
+                                          "lastGenerationAt",
+                                        );
                                       }}
                                       className="inline-flex items-center gap-1"
                                     >
                                       Last generation
                                       {renderSortIcon(
-                                        usersTableSort.key === "lastGenerationAt",
+                                        usersTableSort.key ===
+                                          "lastGenerationAt",
                                         usersTableSort.direction,
                                       )}
                                     </button>
@@ -5550,7 +5592,10 @@ export default function Home() {
                                         [user.firstName, user.lastName]
                                           .filter(Boolean)
                                           .join(" ") || "Unknown user";
-                                      const shortName = shortenText(fullName, 36);
+                                      const shortName = shortenText(
+                                        fullName,
+                                        36,
+                                      );
                                       const fullUsername = user.username
                                         ? `@${user.username}`
                                         : "@no_username";
@@ -5805,13 +5850,16 @@ export default function Home() {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          togglePresentationsTableSort("prompt");
+                                          togglePresentationsTableSort(
+                                            "prompt",
+                                          );
                                         }}
                                         className="inline-flex items-center gap-1"
                                       >
                                         Prompt
                                         {renderSortIcon(
-                                          presentationsTableSort.key === "prompt",
+                                          presentationsTableSort.key ===
+                                            "prompt",
                                           presentationsTableSort.direction,
                                         )}
                                       </button>
@@ -5835,13 +5883,16 @@ export default function Home() {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          togglePresentationsTableSort("status");
+                                          togglePresentationsTableSort(
+                                            "status",
+                                          );
                                         }}
                                         className="inline-flex items-center gap-1"
                                       >
                                         Status
                                         {renderSortIcon(
-                                          presentationsTableSort.key === "status",
+                                          presentationsTableSort.key ===
+                                            "status",
                                           presentationsTableSort.direction,
                                         )}
                                       </button>
@@ -5850,13 +5901,16 @@ export default function Home() {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          togglePresentationsTableSort("language");
+                                          togglePresentationsTableSort(
+                                            "language",
+                                          );
                                         }}
                                         className="inline-flex items-center gap-1"
                                       >
                                         Lang
                                         {renderSortIcon(
-                                          presentationsTableSort.key === "language",
+                                          presentationsTableSort.key ===
+                                            "language",
                                           presentationsTableSort.direction,
                                         )}
                                       </button>
@@ -5865,13 +5919,16 @@ export default function Home() {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          togglePresentationsTableSort("pageCount");
+                                          togglePresentationsTableSort(
+                                            "pageCount",
+                                          );
                                         }}
                                         className="inline-flex items-center gap-1"
                                       >
                                         Slides
                                         {renderSortIcon(
-                                          presentationsTableSort.key === "pageCount",
+                                          presentationsTableSort.key ===
+                                            "pageCount",
                                           presentationsTableSort.direction,
                                         )}
                                       </button>
@@ -5880,13 +5937,16 @@ export default function Home() {
                                       <button
                                         type="button"
                                         onClick={() => {
-                                          togglePresentationsTableSort("createdAt");
+                                          togglePresentationsTableSort(
+                                            "createdAt",
+                                          );
                                         }}
                                         className="inline-flex items-center gap-1"
                                       >
                                         Created
                                         {renderSortIcon(
-                                          presentationsTableSort.key === "createdAt",
+                                          presentationsTableSort.key ===
+                                            "createdAt",
                                           presentationsTableSort.direction,
                                         )}
                                       </button>
@@ -5932,174 +5992,170 @@ export default function Home() {
                                         ),
                                       )
                                     : presentationsForDisplay.map((item) => {
-                                        const presentationUserId = normalizeUserId(
-                                          item.userId,
-                                        );
+                                        const presentationUserId =
+                                          normalizeUserId(item.userId);
                                         const isOpeningUser =
                                           openingPresentationUserTelegramId ===
                                           item.telegramId;
-                                        const failReason =
-                                          item.metadata?.failReason?.trim() ||
-                                          "Reason not available.";
 
                                         return (
-                                        <tr
-                                          key={item.id}
-                                          className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
-                                        >
-                                          <td className="px-3 py-2 font-medium text-main">
-                                            #{item.id}
-                                          </td>
-                                          <td className="px-3 py-2 text-main">
-                                            <p
-                                              className="max-w-xs whitespace-normal break-words"
-                                              style={{
-                                                display: "-webkit-box",
-                                                WebkitBoxOrient: "vertical",
-                                                WebkitLineClamp: 3,
-                                                overflow: "hidden",
-                                              }}
-                                            >
-                                              {item.metadata?.prompt ??
-                                                "Untitled prompt"}
-                                            </p>
-                                          </td>
-                                          <td className="px-3 py-2 text-main">
-                                            <p>
-                                              {presentationUserId ? (
-                                                <Link
-                                                  href={`/users/${presentationUserId}`}
-                                                  className="inline-block max-w-full truncate font-medium underline decoration-transparent transition hover:decoration-current"
-                                                >
-                                                  {item.firstName}
-                                                </Link>
-                                              ) : (
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    void handleOpenPresentationUser(
-                                                      item,
-                                                    );
-                                                  }}
-                                                  disabled={isOpeningUser}
-                                                  className="inline-block max-w-full cursor-pointer truncate font-medium underline decoration-transparent transition hover:decoration-current disabled:cursor-wait disabled:opacity-70"
-                                                >
-                                                  {item.firstName}
-                                                </button>
-                                              )}
-                                            </p>
-                                            <p className="text-xs text-muted">
-                                              {item.username ? (
-                                                <a
-                                                  href={`https://t.me/${item.username}`}
-                                                  target="_blank"
-                                                  rel="noopener noreferrer"
-                                                  className="inline-block max-w-full truncate underline decoration-transparent transition hover:decoration-current"
-                                                >
-                                                  @{item.username}
-                                                </a>
-                                              ) : (
-                                                "@no_username"
-                                              )}
-                                            </p>
-                                          </td>
-                                          <td className="px-3 py-2">
-                                            <span
-                                              className={cn(
-                                                "rounded-full border px-2 py-1 text-xs font-semibold",
-                                                statusPillClass(item.status),
-                                              )}
-                                            >
-                                              {item.status}
-                                            </span>
-                                            {item.status === "failed" ? (
+                                          <tr
+                                            key={item.id}
+                                            className="border-t border-[var(--surface-border)] bg-[var(--surface-1)]"
+                                          >
+                                            <td className="px-3 py-2 font-medium text-main">
+                                              #{item.id}
+                                            </td>
+                                            <td className="px-3 py-2 text-main">
                                               <p
-                                                className="mt-1 max-w-xs whitespace-normal break-words text-xs text-rose-700"
+                                                className="max-w-xs whitespace-normal break-words"
                                                 style={{
                                                   display: "-webkit-box",
                                                   WebkitBoxOrient: "vertical",
-                                                  WebkitLineClamp: 2,
+                                                  WebkitLineClamp: 3,
                                                   overflow: "hidden",
                                                 }}
                                               >
-                                                {failReason}
+                                                {item.metadata?.prompt ??
+                                                  "Untitled prompt"}
                                               </p>
-                                            ) : null}
-                                          </td>
-                                          <td className="px-3 py-2 text-main">
-                                            {item.metadata?.language ?? "-"}
-                                          </td>
-                                          <td className="px-3 py-2 text-main">
-                                            {item.metadata?.pageCount ?? "-"}
-                                          </td>
-                                          <td className="px-3 py-2 text-main">
-                                            {formatDate(item.createdAt)}
-                                          </td>
-                                          <td className="px-3 py-2 text-main">
-                                            <div className="flex items-center gap-2">
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  setSelectedPresentation(item);
-                                                }}
-                                                aria-label={`View presentation #${item.id}`}
-                                                title="View presentation"
-                                                className="inline-flex size-7 items-center justify-center rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] text-main"
+                                            </td>
+                                            <td className="px-3 py-2 text-main">
+                                              <p>
+                                                {presentationUserId ? (
+                                                  <Link
+                                                    href={`/users/${presentationUserId}`}
+                                                    className="inline-block max-w-full truncate font-medium underline decoration-transparent transition hover:decoration-current"
+                                                  >
+                                                    {item.firstName}
+                                                  </Link>
+                                                ) : (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      void handleOpenPresentationUser(
+                                                        item,
+                                                      );
+                                                    }}
+                                                    disabled={isOpeningUser}
+                                                    className="inline-block max-w-full cursor-pointer truncate font-medium underline decoration-transparent transition hover:decoration-current disabled:cursor-wait disabled:opacity-70"
+                                                  >
+                                                    {item.firstName}
+                                                  </button>
+                                                )}
+                                              </p>
+                                              <p className="text-xs text-muted">
+                                                {item.username ? (
+                                                  <a
+                                                    href={`https://t.me/${item.username}`}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="inline-block max-w-full truncate underline decoration-transparent transition hover:decoration-current"
+                                                  >
+                                                    @{item.username}
+                                                  </a>
+                                                ) : (
+                                                  "@no_username"
+                                                )}
+                                              </p>
+                                            </td>
+                                            <td className="px-3 py-2">
+                                              <span
+                                                className={cn(
+                                                  "rounded-full border px-2 py-1 text-xs font-semibold",
+                                                  statusPillClass(item.status),
+                                                )}
                                               >
-                                                <Eye
-                                                  className="size-3.5"
-                                                  aria-hidden="true"
-                                                />
-                                                <span className="sr-only">
-                                                  View presentation
-                                                </span>
-                                              </button>
-
-                                              {item.metadata?.downloadUrl ? (
-                                                <a
-                                                  href={
-                                                    item.metadata.downloadUrl
-                                                  }
-                                                  target="_blank"
-                                                  rel="noopener noreferrer"
-                                                  aria-label={`Download presentation #${item.id}`}
-                                                  title="Download presentation"
-                                                  className="inline-flex size-7 items-center justify-center rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] text-main"
-                                                >
-                                                  <Download
-                                                    className="size-3.5"
-                                                    aria-hidden="true"
-                                                  />
-                                                  <span className="sr-only">
-                                                    Download presentation
-                                                  </span>
-                                                </a>
+                                                {item.status}
+                                              </span>
+                                              {item.status === "failed" ? (
+                                                <p
+                                                  className="mt-1 max-w-xs whitespace-normal break-words text-xs text-rose-700"
+                                                  style={{
+                                                    display: "-webkit-box",
+                                                    WebkitBoxOrient: "vertical",
+                                                    WebkitLineClamp: 2,
+                                                    overflow: "hidden",
+                                                  }}
+                                                ></p>
                                               ) : null}
-
-                                              {item.status === "pending" ? (
+                                            </td>
+                                            <td className="px-3 py-2 text-main">
+                                              {item.metadata?.language ?? "-"}
+                                            </td>
+                                            <td className="px-3 py-2 text-main">
+                                              {item.metadata?.pageCount ?? "-"}
+                                            </td>
+                                            <td className="px-3 py-2 text-main">
+                                              {formatDate(item.createdAt)}
+                                            </td>
+                                            <td className="px-3 py-2 text-main">
+                                              <div className="flex items-center gap-2">
                                                 <button
                                                   type="button"
                                                   onClick={() => {
-                                                    void handleFailPresentation(
-                                                      item.id,
+                                                    setSelectedPresentation(
+                                                      item,
                                                     );
                                                   }}
-                                                  aria-label="Force fail"
-                                                  title="Force fail"
-                                                  className="inline-flex size-7 items-center justify-center rounded-lg border border-rose-300 bg-rose-100 text-rose-700"
+                                                  aria-label={`View presentation #${item.id}`}
+                                                  title="View presentation"
+                                                  className="inline-flex size-7 items-center justify-center rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] text-main"
                                                 >
-                                                  <XCircle
+                                                  <Eye
                                                     className="size-3.5"
                                                     aria-hidden="true"
                                                   />
                                                   <span className="sr-only">
-                                                    Force fail
+                                                    View presentation
                                                   </span>
                                                 </button>
-                                              ) : null}
-                                            </div>
-                                          </td>
-                                        </tr>
+
+                                                {item.metadata?.downloadUrl ? (
+                                                  <a
+                                                    href={
+                                                      item.metadata.downloadUrl
+                                                    }
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    aria-label={`Download presentation #${item.id}`}
+                                                    title="Download presentation"
+                                                    className="inline-flex size-7 items-center justify-center rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] text-main"
+                                                  >
+                                                    <Download
+                                                      className="size-3.5"
+                                                      aria-hidden="true"
+                                                    />
+                                                    <span className="sr-only">
+                                                      Download presentation
+                                                    </span>
+                                                  </a>
+                                                ) : null}
+
+                                                {item.status === "pending" ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      void handleFailPresentation(
+                                                        item.id,
+                                                      );
+                                                    }}
+                                                    aria-label="Force fail"
+                                                    title="Force fail"
+                                                    className="inline-flex size-7 items-center justify-center rounded-lg border border-rose-300 bg-rose-100 text-rose-700"
+                                                  >
+                                                    <XCircle
+                                                      className="size-3.5"
+                                                      aria-hidden="true"
+                                                    />
+                                                    <span className="sr-only">
+                                                      Force fail
+                                                    </span>
+                                                  </button>
+                                                ) : null}
+                                              </div>
+                                            </td>
+                                          </tr>
                                         );
                                       })}
                                 </tbody>
@@ -6474,14 +6530,19 @@ export default function Home() {
                                             <button
                                               type="button"
                                               onClick={() => {
-                                                void handleDeleteBroadcast(item);
+                                                void handleDeleteBroadcast(
+                                                  item,
+                                                );
                                               }}
-                                              disabled={deletingBroadcastId !== null}
+                                              disabled={
+                                                deletingBroadcastId !== null
+                                              }
                                               aria-label="Delete broadcast message"
                                               title="Delete broadcast message"
                                               className="inline-flex size-7 items-center justify-center rounded-lg border border-[var(--surface-border)] bg-[var(--surface-2)] text-main transition hover:border-[var(--danger-btn-border)] hover:text-[var(--danger-btn-text)] disabled:cursor-not-allowed disabled:opacity-60"
                                             >
-                                              {deletingBroadcastId === item.id ? (
+                                              {deletingBroadcastId ===
+                                              item.id ? (
                                                 <Loader2
                                                   className="size-3 animate-spin"
                                                   aria-hidden="true"
@@ -7192,8 +7253,7 @@ export default function Home() {
                           ) : (
                             "@no_username"
                           )}{" "}
-                          -
-                          Telegram ID: {selectedPresentation.telegramId}
+                          - Telegram ID: {selectedPresentation.telegramId}
                         </p>
                       </div>
 
@@ -7226,11 +7286,16 @@ export default function Home() {
                           File: {selectedPresentation.metadata?.fileName ?? "-"}
                         </p>
                         <p className="mt-1">
-                          File size: {formatFileSizeMb(selectedPresentation.metadata?.fileSizeKb)}
+                          File size:{" "}
+                          {formatFileSizeMb(
+                            selectedPresentation.metadata?.fileSizeKb,
+                          )}
                         </p>
                         {selectedPresentation.status === "failed" ? (
                           <p className="mt-1 whitespace-pre-wrap break-words text-rose-700">
-                            Fail reason: {selectedPresentation.metadata?.failReason?.trim() || "Reason not available."}
+                            Fail reason:{" "}
+                            {selectedPresentation.metadata?.failReason?.trim() ||
+                              "Reason not available."}
                           </p>
                         ) : null}
                         <p className="mt-1 break-all">
