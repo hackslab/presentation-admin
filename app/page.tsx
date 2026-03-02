@@ -15,6 +15,9 @@ import {
   useState,
 } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
+  ArrowUpDown,
   Bold,
   Code2,
   Download,
@@ -51,6 +54,25 @@ type SortOrder = "asc" | "desc";
 type UserRegistrationFilter = "all" | "registered" | "unregistered";
 type PresentationLanguageFilter = "all" | "uz" | "ru" | "en";
 type JoinedUsersRange = "90d" | "60d" | "30d" | "15d" | "7d" | "1d";
+type UserTableSortKey =
+  | "name"
+  | "telegramId"
+  | "createdAt"
+  | "totalGenerations"
+  | "lastGenerationAt";
+type PresentationTableSortKey =
+  | "id"
+  | "prompt"
+  | "user"
+  | "status"
+  | "language"
+  | "pageCount"
+  | "createdAt";
+
+interface TableSortState<TKey extends string> {
+  key: TKey;
+  direction: SortOrder;
+}
 
 interface AdminProfile {
   id: number;
@@ -860,6 +882,9 @@ export default function Home() {
   const [usersPageInfo, setUsersPageInfo] = useState<ConnectionPageInfo>(
     EMPTY_CONNECTION_PAGE_INFO,
   );
+  const [usersTableSort, setUsersTableSort] = useState<
+    TableSortState<UserTableSortKey>
+  >({ key: "createdAt", direction: "desc" });
 
   const [presentationLimit, setPresentationLimit] = useState(15);
   const [presentationStatus, setPresentationStatus] =
@@ -875,6 +900,9 @@ export default function Home() {
   >([null]);
   const [presentationsPageInfo, setPresentationsPageInfo] =
     useState<ConnectionPageInfo>(EMPTY_CONNECTION_PAGE_INFO);
+  const [presentationsTableSort, setPresentationsTableSort] = useState<
+    TableSortState<PresentationTableSortKey>
+  >({ key: "createdAt", direction: "desc" });
   const [openingPresentationUserTelegramId, setOpeningPresentationUserTelegramId] =
     useState<string | null>(null);
 
@@ -2535,6 +2563,111 @@ export default function Home() {
   const showSystemPromptsSkeleton =
     isSystemPromptsLoading && systemPrompts.length === 0;
   const showAdminsSkeleton = isAdminsLoading && admins.length === 0;
+
+  const usersForDisplay = useMemo(() => {
+    const compareString = (left: string | null | undefined, right: string | null | undefined) =>
+      (left ?? "").localeCompare(right ?? "", undefined, { sensitivity: "base" });
+
+    const sorted = [...users].sort((left, right) => {
+      switch (usersTableSort.key) {
+        case "name": {
+          const leftName = [left.firstName, left.lastName].filter(Boolean).join(" ");
+          const rightName = [right.firstName, right.lastName].filter(Boolean).join(" ");
+          return compareString(leftName, rightName);
+        }
+        case "telegramId":
+          return compareString(left.telegramId, right.telegramId);
+        case "totalGenerations":
+          return left.totalGenerations - right.totalGenerations;
+        case "lastGenerationAt": {
+          const leftTime = left.lastGenerationAt ? new Date(left.lastGenerationAt).getTime() : 0;
+          const rightTime = right.lastGenerationAt ? new Date(right.lastGenerationAt).getTime() : 0;
+          return leftTime - rightTime;
+        }
+        case "createdAt":
+        default:
+          return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+      }
+    });
+
+    return usersTableSort.direction === "asc" ? sorted : sorted.reverse();
+  }, [users, usersTableSort]);
+
+  const presentationsForDisplay = useMemo(() => {
+    const compareString = (left: string | null | undefined, right: string | null | undefined) =>
+      (left ?? "").localeCompare(right ?? "", undefined, { sensitivity: "base" });
+
+    const sorted = [...presentations].sort((left, right) => {
+      switch (presentationsTableSort.key) {
+        case "id":
+          return left.id - right.id;
+        case "prompt":
+          return compareString(left.metadata?.prompt, right.metadata?.prompt);
+        case "user": {
+          const leftValue = left.username ? `@${left.username}` : left.firstName;
+          const rightValue = right.username ? `@${right.username}` : right.firstName;
+          return compareString(leftValue, rightValue);
+        }
+        case "status":
+          return compareString(left.status, right.status);
+        case "language":
+          return compareString(left.metadata?.language, right.metadata?.language);
+        case "pageCount": {
+          const leftCount = left.metadata?.pageCount ?? -1;
+          const rightCount = right.metadata?.pageCount ?? -1;
+          return leftCount - rightCount;
+        }
+        case "createdAt":
+        default:
+          return new Date(left.createdAt).getTime() - new Date(right.createdAt).getTime();
+      }
+    });
+
+    return presentationsTableSort.direction === "asc" ? sorted : sorted.reverse();
+  }, [presentations, presentationsTableSort]);
+
+  const toggleUsersTableSort = useCallback((key: UserTableSortKey) => {
+    setUsersTableSort((previous) => ({
+      key,
+      direction:
+        previous.key === key
+          ? previous.direction === "asc"
+            ? "desc"
+            : "asc"
+          : "asc",
+    }));
+  }, []);
+
+  const togglePresentationsTableSort = useCallback(
+    (key: PresentationTableSortKey) => {
+      setPresentationsTableSort((previous) => ({
+        key,
+        direction:
+          previous.key === key
+            ? previous.direction === "asc"
+              ? "desc"
+              : "asc"
+            : "asc",
+      }));
+    },
+    [],
+  );
+
+  const renderSortIcon = useCallback(
+    (isActive: boolean, direction: SortOrder) => {
+      if (!isActive) {
+        return <ArrowUpDown className="size-3.5" aria-hidden="true" />;
+      }
+
+      if (direction === "asc") {
+        return <ArrowUp className="size-3.5" aria-hidden="true" />;
+      }
+
+      return <ArrowDown className="size-3.5" aria-hidden="true" />;
+    },
+    [],
+  );
+
   const adminsForDisplay = useMemo(() => {
     if (!isSuperAdmin || currentAdminId === null || admins.length <= 1) {
       return admins;
@@ -5290,11 +5423,81 @@ export default function Home() {
                             <table className="min-w-full text-sm">
                               <thead className="bg-[var(--surface-2)] text-left text-[0.72rem] tracking-[0.12em] text-muted uppercase">
                                 <tr>
-                                  <th className="px-3 py-2">User</th>
-                                  <th className="px-3 py-2">Telegram</th>
-                                  <th className="px-3 py-2">Joined</th>
-                                  <th className="px-3 py-2">Total</th>
-                                  <th className="px-3 py-2">Last generation</th>
+                                  <th className="px-3 py-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        toggleUsersTableSort("name");
+                                      }}
+                                      className="inline-flex items-center gap-1"
+                                    >
+                                      User
+                                      {renderSortIcon(
+                                        usersTableSort.key === "name",
+                                        usersTableSort.direction,
+                                      )}
+                                    </button>
+                                  </th>
+                                  <th className="px-3 py-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        toggleUsersTableSort("telegramId");
+                                      }}
+                                      className="inline-flex items-center gap-1"
+                                    >
+                                      Telegram
+                                      {renderSortIcon(
+                                        usersTableSort.key === "telegramId",
+                                        usersTableSort.direction,
+                                      )}
+                                    </button>
+                                  </th>
+                                  <th className="px-3 py-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        toggleUsersTableSort("createdAt");
+                                      }}
+                                      className="inline-flex items-center gap-1"
+                                    >
+                                      Joined
+                                      {renderSortIcon(
+                                        usersTableSort.key === "createdAt",
+                                        usersTableSort.direction,
+                                      )}
+                                    </button>
+                                  </th>
+                                  <th className="px-3 py-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        toggleUsersTableSort("totalGenerations");
+                                      }}
+                                      className="inline-flex items-center gap-1"
+                                    >
+                                      Total
+                                      {renderSortIcon(
+                                        usersTableSort.key === "totalGenerations",
+                                        usersTableSort.direction,
+                                      )}
+                                    </button>
+                                  </th>
+                                  <th className="px-3 py-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        toggleUsersTableSort("lastGenerationAt");
+                                      }}
+                                      className="inline-flex items-center gap-1"
+                                    >
+                                      Last generation
+                                      {renderSortIcon(
+                                        usersTableSort.key === "lastGenerationAt",
+                                        usersTableSort.direction,
+                                      )}
+                                    </button>
+                                  </th>
                                 </tr>
                               </thead>
                               <tbody>
@@ -5324,7 +5527,7 @@ export default function Home() {
                                         </tr>
                                       ),
                                     )
-                                  : users.map((user) => {
+                                  : usersForDisplay.map((user) => {
                                       const fullName =
                                         [user.firstName, user.lastName]
                                           .filter(Boolean)
@@ -5565,13 +5768,111 @@ export default function Home() {
                               <table className="min-w-full text-sm">
                                 <thead className="bg-[var(--surface-2)] text-left text-[0.72rem] tracking-[0.12em] text-muted uppercase">
                                   <tr>
-                                    <th className="px-3 py-2">ID</th>
-                                    <th className="px-3 py-2">Prompt</th>
-                                    <th className="px-3 py-2">User</th>
-                                    <th className="px-3 py-2">Status</th>
-                                    <th className="px-3 py-2">Lang</th>
-                                    <th className="px-3 py-2">Slides</th>
-                                    <th className="px-3 py-2">Created</th>
+                                    <th className="px-3 py-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          togglePresentationsTableSort("id");
+                                        }}
+                                        className="inline-flex items-center gap-1"
+                                      >
+                                        ID
+                                        {renderSortIcon(
+                                          presentationsTableSort.key === "id",
+                                          presentationsTableSort.direction,
+                                        )}
+                                      </button>
+                                    </th>
+                                    <th className="px-3 py-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          togglePresentationsTableSort("prompt");
+                                        }}
+                                        className="inline-flex items-center gap-1"
+                                      >
+                                        Prompt
+                                        {renderSortIcon(
+                                          presentationsTableSort.key === "prompt",
+                                          presentationsTableSort.direction,
+                                        )}
+                                      </button>
+                                    </th>
+                                    <th className="px-3 py-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          togglePresentationsTableSort("user");
+                                        }}
+                                        className="inline-flex items-center gap-1"
+                                      >
+                                        User
+                                        {renderSortIcon(
+                                          presentationsTableSort.key === "user",
+                                          presentationsTableSort.direction,
+                                        )}
+                                      </button>
+                                    </th>
+                                    <th className="px-3 py-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          togglePresentationsTableSort("status");
+                                        }}
+                                        className="inline-flex items-center gap-1"
+                                      >
+                                        Status
+                                        {renderSortIcon(
+                                          presentationsTableSort.key === "status",
+                                          presentationsTableSort.direction,
+                                        )}
+                                      </button>
+                                    </th>
+                                    <th className="px-3 py-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          togglePresentationsTableSort("language");
+                                        }}
+                                        className="inline-flex items-center gap-1"
+                                      >
+                                        Lang
+                                        {renderSortIcon(
+                                          presentationsTableSort.key === "language",
+                                          presentationsTableSort.direction,
+                                        )}
+                                      </button>
+                                    </th>
+                                    <th className="px-3 py-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          togglePresentationsTableSort("pageCount");
+                                        }}
+                                        className="inline-flex items-center gap-1"
+                                      >
+                                        Slides
+                                        {renderSortIcon(
+                                          presentationsTableSort.key === "pageCount",
+                                          presentationsTableSort.direction,
+                                        )}
+                                      </button>
+                                    </th>
+                                    <th className="px-3 py-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          togglePresentationsTableSort("createdAt");
+                                        }}
+                                        className="inline-flex items-center gap-1"
+                                      >
+                                        Created
+                                        {renderSortIcon(
+                                          presentationsTableSort.key === "createdAt",
+                                          presentationsTableSort.direction,
+                                        )}
+                                      </button>
+                                    </th>
                                     <th className="px-3 py-2">Action</th>
                                   </tr>
                                 </thead>
@@ -5612,7 +5913,7 @@ export default function Home() {
                                           </tr>
                                         ),
                                       )
-                                    : presentations.map((item) => {
+                                    : presentationsForDisplay.map((item) => {
                                         const presentationUserId = normalizeUserId(
                                           item.userId,
                                         );
