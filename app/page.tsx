@@ -130,6 +130,7 @@ interface PresentationMetadata {
   fileSizeKb?: number;
   storageKey?: string;
   downloadUrl?: string;
+  failReason?: string;
 }
 
 interface PresentationRow {
@@ -5476,7 +5477,7 @@ export default function Home() {
                                       }}
                                       className="inline-flex items-center gap-1"
                                     >
-                                      Total
+                                      Total generated
                                       {renderSortIcon(
                                         usersTableSort.key === "totalGenerations",
                                         usersTableSort.direction,
@@ -5920,6 +5921,9 @@ export default function Home() {
                                         const isOpeningUser =
                                           openingPresentationUserTelegramId ===
                                           item.telegramId;
+                                        const failReason =
+                                          item.metadata?.failReason?.trim() ||
+                                          "Reason not available.";
 
                                         return (
                                         <tr
@@ -5991,6 +5995,19 @@ export default function Home() {
                                             >
                                               {item.status}
                                             </span>
+                                            {item.status === "failed" ? (
+                                              <p
+                                                className="mt-1 max-w-xs whitespace-normal break-words text-xs text-rose-700"
+                                                style={{
+                                                  display: "-webkit-box",
+                                                  WebkitBoxOrient: "vertical",
+                                                  WebkitLineClamp: 2,
+                                                  overflow: "hidden",
+                                                }}
+                                              >
+                                                {failReason}
+                                              </p>
+                                            ) : null}
                                           </td>
                                           <td className="px-3 py-2 text-main">
                                             {item.metadata?.language ?? "-"}
@@ -7194,6 +7211,11 @@ export default function Home() {
                         <p className="mt-1">
                           File size: {formatFileSizeMb(selectedPresentation.metadata?.fileSizeKb)}
                         </p>
+                        {selectedPresentation.status === "failed" ? (
+                          <p className="mt-1 whitespace-pre-wrap break-words text-rose-700">
+                            Fail reason: {selectedPresentation.metadata?.failReason?.trim() || "Reason not available."}
+                          </p>
+                        ) : null}
                         <p className="mt-1 break-all">
                           Download:{" "}
                           {selectedPresentation.metadata?.downloadUrl ? (
