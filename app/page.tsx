@@ -60,6 +60,7 @@ type UserTableSortKey =
   | "createdAt"
   | "totalGenerations"
   | "lastGenerationAt";
+type UserBackendSortBy = "createdAt" | "totalGeneratedCount";
 type PresentationTableSortKey =
   | "id"
   | "prompt"
@@ -901,6 +902,14 @@ export default function Home() {
   const [usersTableSort, setUsersTableSort] = useState<
     TableSortState<UserTableSortKey>
   >({ key: "createdAt", direction: "desc" });
+  const usersBackendSortBy: UserBackendSortBy =
+    usersTableSort.key === "totalGenerations"
+      ? "totalGeneratedCount"
+      : "createdAt";
+  const usersBackendSortOrder: SortOrder =
+    usersTableSort.key === "totalGenerations"
+      ? usersTableSort.direction
+      : userSortOrder;
 
   const [presentationLimit, setPresentationLimit] = useState(15);
   const [presentationStatus, setPresentationStatus] =
@@ -1113,7 +1122,8 @@ export default function Home() {
           query.set("registration", userRegistrationFilter);
         }
 
-        query.set("sortOrder", userSortOrder);
+        query.set("sortBy", usersBackendSortBy);
+        query.set("sortOrder", usersBackendSortOrder);
 
         query.set("first", `${Math.max(1, Math.min(200, userLimit))}`);
 
@@ -1144,7 +1154,8 @@ export default function Home() {
       debouncedUserSearch,
       userLimit,
       userRegistrationFilter,
-      userSortOrder,
+      usersBackendSortBy,
+      usersBackendSortOrder,
     ],
   );
 
@@ -1807,7 +1818,8 @@ export default function Home() {
     session?.accessToken,
     userRegistrationFilter,
     userLimit,
-    userSortOrder,
+    usersBackendSortBy,
+    usersBackendSortOrder,
     debouncedUserSearch,
   ]);
 
