@@ -833,8 +833,6 @@ export default function UserDetailsPage() {
                   <tbody>
                     {presentations.map((presentation) => {
                       const metadata = presentation.metadata;
-                      const failReason =
-                        metadata?.failReason?.trim() || "Reason not available.";
 
                       return (
                         <tr
@@ -859,9 +857,7 @@ export default function UserDetailsPage() {
                                   WebkitLineClamp: 2,
                                   overflow: "hidden",
                                 }}
-                              >
-                                {failReason}
-                              </p>
+                              ></p>
                             ) : null}
                           </td>
                           <td className="max-w-[260px] px-3 py-2 text-main">
